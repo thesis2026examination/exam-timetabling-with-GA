@@ -38,6 +38,7 @@ class GeneticAlgorithm:
                 valid_periods = list(exam.available_periods) if exam.available_periods else list(self.ds.periods.keys())
                 if exam.idx in self.large_exam_ids:
                     valid_periods = [p for p in valid_periods if p < 24]
+                    valid_periods = [p for p in valid_periods if p <= 24]
                     if not valid_periods:
                         valid_periods = list(exam.available_periods) if exam.available_periods else list(self.ds.periods.keys())
                 
@@ -127,6 +128,7 @@ class GeneticAlgorithm:
             if not is_time_fixed:
                 if idx in self.large_exam_ids:
                     valid_periods = [p for p in range(24) if (not self.ds.exams[idx].available_periods or p in self.ds.exams[idx].available_periods)]
+                    valid_periods = [p for p in range(1, 25) if (not self.ds.exams[idx].available_periods or p in self.ds.exams[idx].available_periods)]
                     if valid_periods: p_id = random.choice(valid_periods)
                 else:
                     opts = list(self.ds.exams[idx].available_periods) if self.ds.exams[idx].available_periods else list(self.ds.periods.keys())
@@ -147,6 +149,23 @@ class GeneticAlgorithm:
                 assigned_rooms.append(r_id)
                 room = self.ds.rooms[r_id]
                 capacity += room.alt_size if exam.alt_seating else room.size
+            if not is_room_fixed:
+                exam = self.ds.exams[idx]
+                available = list(exam.available_rooms) if exam.available_rooms else list(self.ds.rooms.keys())
+                random.shuffle(available)
+                assigned_rooms = []
+                capacity = 0
+                
+                # SİTEDEKİ METİN KURALI: Kapasite dolana kadar akıllıca oda ekle (Room Split desteği)
+                for r_id in available:
+                    if capacity >= exam.students_count: break
+                    assigned_rooms.append(r_id)
+                    room = self.ds.rooms[r_id]
+                    capacity += room.alt_size if exam.alt_seating else room.size
+                        
+                # Eğer havuzda oda kalmadıysa ama hala kapasite yetmediyse eldekileri kullan
+                if not assigned_rooms and available:
+                    assigned_rooms.append(available[0])
                     
             # Eğer havuzda oda kalmadıysa ama hala kapasite yetmediyse eldekileri kullan
             if not assigned_rooms and available:
@@ -154,6 +173,7 @@ class GeneticAlgorithm:
                 
             rooms = tuple(assigned_rooms)
                 
+                    
             new_chromosome[idx] = (p_id, rooms)
             
         return new_chromosome
@@ -188,8 +208,10 @@ class GeneticAlgorithm:
             return repaired
             
         # Get top 20 exams with most conflicts to repair
+        # Get top 50 exams with most conflicts to repair
         sorted_exams = sorted(exam_conflicts.items(), key=lambda x: x[1], reverse=True)
         top_exams = [ex for ex, _ in sorted_exams[:20]]
+        top_exams = [ex for ex, _ in sorted_exams[:50]]
         
         # Shift them to a period with minimum conflicts
         for ex in top_exams:
@@ -202,6 +224,7 @@ class GeneticAlgorithm:
             valid_periods = list(self.ds.exams[ex].available_periods) if self.ds.exams[ex].available_periods else list(self.ds.periods.keys())
             if ex in self.large_exam_ids:
                 valid_periods = [p for p in valid_periods if p < 24]
+                valid_periods = [p for p in valid_periods if p <= 24]
                 
             if not valid_periods:
                 continue
@@ -229,6 +252,10 @@ class GeneticAlgorithm:
     def run(self, generations: int = 100):
         self.initialize_population()
         
+        best_ever_fitness = float('inf')
+        patience_counter = 0
+        base_mutation_rate = self.mutation_rate
+        
         for gen in range(generations):
             # Evaluate fitness across current population
             evaluated = []
@@ -245,12 +272,46 @@ class GeneticAlgorithm:
             rep_fitness, _ = self.fitness_calc.calculate_fitness(repaired_chrom)
             if rep_fitness < evaluated[0][0]:
                 evaluated[0] = (rep_fitness, repaired_chrom)
+            # Memetic Algorithm: Apply Repair Operator to the top 10% chromosomes
+            memetic_count = max(1, int(self.population_size * 0.10))
+            for i in range(memetic_count):
+                chrom = evaluated[i][1]
+                repaired_chrom = self._repair_operator(chrom)
+                rep_fitness, _ = self.fitness_calc.calculate_fitness(repaired_chrom)
+                if rep_fitness < evaluated[i][0]:
+                    evaluated[i] = (rep_fitness, repaired_chrom)
                 
             # Re-sort just in case the repair improved the best beyond others
             evaluated.sort(key=lambda x: x[0])
 
             best_fitness = evaluated[0][0]
             logger.info(f"Generation {gen}: Best Fitness (Penalty) = {best_fitness}")
+            
+            # Detaylı Fitness Çarpım Raporu (Sadece o jenerasyonun en iyisi için)
+            _, best_scores = self.fitness_calc.calculate_fitness(evaluated[0][1])
+            for k, v in best_scores.items():
+                if v > 0:
+                    weight = self.fitness_calc.weights[k]
+                    raw_val = round(v / weight, 4)
+                    raw_str = f"{int(raw_val)}" if raw_val.is_integer() else f"{raw_val}"
+                    logger.info(f"    -> {k}: {raw_str} (adet/birim) x {weight} (ağırlık) = {v}")
+            
+            # --- ADAPTIVE MUTATION (PATIENCE) MANTIĞI ---
+            if best_fitness < best_ever_fitness - 0.1:
+                best_ever_fitness = best_fitness
+                patience_counter = 0
+                # Yeni ve daha iyi bir çözüm bulduysak, mutasyon oranını normale döndür
+                if self.mutation_rate > base_mutation_rate:
+                    self.mutation_rate = base_mutation_rate
+                    logger.info(f"Fitness gelişti. Mutasyon oranı normale ({self.mutation_rate:.4f}) çekildi.")
+            else:
+                patience_counter += 1
+                
+            if patience_counter >= 5:
+                self.mutation_rate = min(0.5, self.mutation_rate * 2.0)
+                logger.info(f"5 jenerasyondur gelişim yok! Mutasyon oranı artırıldı: {self.mutation_rate:.4f}")
+                patience_counter = 0
+            # ------------------------------------------
             
             # Elitism: Keep the top 5% of chromosomes unconditionally to guarantee progress
             elitism_count = max(2, int(self.population_size * 0.05))
@@ -268,6 +329,12 @@ class GeneticAlgorithm:
                 # Apply Controlled Mutation
                 child1 = self.mutate(child1)
                 child2 = self.mutate(child2)
+                
+                # Memetic step: Local search on children with 25% probability
+                if random.random() < 0.25:
+                    child1 = self._repair_operator(child1)
+                if random.random() < 0.25:
+                    child2 = self._repair_operator(child2)
                 
                 next_population.append(child1)
                 if len(next_population) < self.population_size:

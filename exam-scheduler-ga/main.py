@@ -38,7 +38,10 @@ def main():
     logging.info(f"Best Fitness (Penalty): {best_fitness}")
     for k, v in scores.items():
         if v > 0:
-            logging.info(f"  - {k}: {v}")
+            weight = ga.fitness_calc.weights[k]
+            raw_val = round(v / weight, 4)
+            raw_str = f"{int(raw_val)}" if raw_val.is_integer() else f"{raw_val}"
+            logging.info(f"  - {k}: {raw_str} (adet/birim) x {weight} (ağırlık) = {v}")
             
 if __name__ == "__main__":
     main()
