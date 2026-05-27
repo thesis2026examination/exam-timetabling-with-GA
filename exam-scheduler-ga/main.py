@@ -8,7 +8,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     
     parser = argparse.ArgumentParser(description="Exam Timetabling using Genetic Algorithm")
-    parser.add_argument("--dataset", type=str, default="c:/exam-timetabling-with-GA/pu-exam-fal10.xml",
+    parser.add_argument("--dataset", type=str, default=r"C:\Users\zenaa\Desktop\TezProjesi\exam-timetabling-with-GA\pu-exam-fal10.xml",
                         help="Path to the XML dataset file")
     parser.add_argument("--pop-size", type=int, default=10, help="Population size")
     parser.add_argument("--gens", type=int, default=50, help="Number of generations")

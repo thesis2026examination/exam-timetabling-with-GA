@@ -20,41 +20,60 @@ class GeneticAlgorithm:
         
     def generate_random_chromosome(self) -> List[Tuple[int, Tuple[int, ...]]]:
         chromosome = [None] * len(self.ds.exams)
+        period_exams = {p: [] for p in self.ds.periods.keys()}
         
-        for exam in self.ds.exams:
+        # Order exams: Large exams first, then others randomly
+        exam_indices = list(range(len(self.ds.exams)))
+        random.shuffle(exam_indices)
+        large_exams = [idx for idx in exam_indices if idx in self.large_exam_ids]
+        other_exams = [idx for idx in exam_indices if idx not in self.large_exam_ids]
+        sorted_exams = large_exams + other_exams
+        
+        for idx in sorted_exams:
+            exam = self.ds.exams[idx]
             # 1. ASSIGN PERIOD (With Smart Heuristic Support)
             if exam.idx in self.ds.time_fixed_exams:
                 p_id = self.ds.time_fixed_exams[exam.idx]
             else:
-                # HEURISTIC: Enforce prompt.md rule for the 21 Large Exams (strictly fit within first 24 periods)
+                valid_periods = list(exam.available_periods) if exam.available_periods else list(self.ds.periods.keys())
                 if exam.idx in self.large_exam_ids:
-                    valid_periods = [p for p in range(24) if (not exam.available_periods or p in exam.available_periods)]
-                    if valid_periods:
-                        p_id = random.choice(valid_periods)
-                    else:
-                        p_id = random.choice(list(exam.available_periods)) if exam.available_periods else random.choice(list(self.ds.periods.keys()))
-                else:
-                    p_id = random.choice(list(exam.available_periods)) if exam.available_periods else random.choice(list(self.ds.periods.keys()))
+                    valid_periods = [p for p in valid_periods if p < 24]
+                    if not valid_periods:
+                        valid_periods = list(exam.available_periods) if exam.available_periods else list(self.ds.periods.keys())
+                
+                # Greedy Selection: Pick period with minimum conflict among already scheduled exams
+                sampled_periods = random.sample(valid_periods, min(len(valid_periods), 10))
+                best_periods, min_conf = [], float('inf')
+                for p in sampled_periods:
+                    conflicts = sum(self.ds.conflict_matrix[exam.idx][other] for other in period_exams[p])
+                    if conflicts < min_conf:
+                        min_conf = conflicts
+                        best_periods = [p]
+                    elif conflicts == min_conf:
+                        best_periods.append(p)
+                
+                p_id = random.choice(best_periods)
+                
+            period_exams[p_id].append(exam.idx)
                 
             # 2. ASSIGN ROOMS
             if exam.idx in self.ds.room_fixed_exams:
                 rooms = (self.ds.room_fixed_exams[exam.idx],)
             else:
                 available = list(exam.available_rooms) if exam.available_rooms else list(self.ds.rooms.keys())
+                random.shuffle(available)
                 assigned_rooms = []
                 capacity = 0
                 
-                # Assign rooms until capacity is met (accounting for 43% alternative seating)
-                while capacity < exam.students_count and available:
-                    r_id = random.choice(available)
-                    if r_id not in assigned_rooms:
-                        assigned_rooms.append(r_id)
-                        room = self.ds.rooms[r_id]
-                        capacity += room.alt_size if exam.alt_seating else room.size
-                        
+                for r_id in available:
+                    if capacity >= exam.students_count: break
+                    assigned_rooms.append(r_id)
+                    room = self.ds.rooms[r_id]
+                    capacity += room.alt_size if exam.alt_seating else room.size
+                
                 if not assigned_rooms and available:
-                    assigned_rooms.append(random.choice(available))
-                    
+                    assigned_rooms.append(available[0])
+                
                 rooms = tuple(assigned_rooms)
                 
             chromosome[exam.idx] = (p_id, rooms)
@@ -118,21 +137,20 @@ class GeneticAlgorithm:
         if not is_room_fixed:
             exam = self.ds.exams[idx]
             available = list(exam.available_rooms) if exam.available_rooms else list(self.ds.rooms.keys())
+            random.shuffle(available)
             assigned_rooms = []
             capacity = 0
             
             # SİTEDEKİ METİN KURALI: Kapasite dolana kadar akıllıca oda ekle (Room Split desteği)
-            while capacity < exam.students_count and available:
-                r_id = random.choice(available)
-                if r_id not in assigned_rooms:
-                    assigned_rooms.append(r_id)
-                    room = self.ds.rooms[r_id]
-                    # prompt.md & MISTA %43 kuralı: alt_seating varsa seyreltilmiş kapasiteyi ekle
-                    capacity += room.alt_size if exam.alt_seating else room.size
+            for r_id in available:
+                if capacity >= exam.students_count: break
+                assigned_rooms.append(r_id)
+                room = self.ds.rooms[r_id]
+                capacity += room.alt_size if exam.alt_seating else room.size
                     
             # Eğer havuzda oda kalmadıysa ama hala kapasite yetmediyse eldekileri kullan
             if not assigned_rooms and available:
-                assigned_rooms.append(random.choice(available))
+                assigned_rooms.append(available[0])
                 
             rooms = tuple(assigned_rooms)
                 
@@ -169,12 +187,12 @@ class GeneticAlgorithm:
         if not exam_conflicts:
             return repaired
             
-        # Get top 3 exams with most conflicts
+        # Get top 20 exams with most conflicts to repair
         sorted_exams = sorted(exam_conflicts.items(), key=lambda x: x[1], reverse=True)
-        top_3 = [ex for ex, _ in sorted_exams[:3]]
+        top_exams = [ex for ex, _ in sorted_exams[:20]]
         
         # Shift them to a period with minimum conflicts
-        for ex in top_3:
+        for ex in top_exams:
             if ex in self.ds.time_fixed_exams:
                 continue
                 
