@@ -117,28 +117,25 @@ class FitnessCalculator:
         # Direct conflict
         for p_id in range(1, 30):
             exams = period_exams[p_id]
-            n = len(exams)
-            for i in range(n):
-                ex1 = exams[i]
-                for j in range(i + 1, n):
-                    conflicts = self.ds.conflict_matrix[ex1][exams[j]]
-                    if conflicts > 0:
-                        scores["direct_conflict"] += conflicts * self.weights["direct_conflict"]
+            if len(exams) > 1:
+                # NumPy ile alt-matrisin toplamını tek seferde al ve simetrik olduğu için 2'ye böl
+                conflicts = int(self.ds.conflict_matrix[np.ix_(exams, exams)].sum() // 2)
+                if conflicts > 0:
+                    scores["direct_conflict"] += conflicts * self.weights["direct_conflict"]
                         
         # Back to back & room distance
         for p1, p2 in self._b2b_periods:
-            for ex1 in period_exams[p1]:
-                for ex2 in period_exams[p2]:
-                    conflicts = self.ds.conflict_matrix[ex1][ex2]
-                    if conflicts > 0:
-                        scores["back_to_back"] += conflicts * self.weights["back_to_back"]
-                        
-                        max_d = 0.0
-                        for r1 in chromosome[ex1][1]:
-                            for r2 in chromosome[ex2][1]:
-                                d = self._distance_cache[r1][r2]
-                                if d > max_d: max_d = d
-                        scores["room_distance"] += conflicts * max_d * self.weights["room_distance"]
+            exams1, exams2 = period_exams[p1], period_exams[p2]
+            if not exams1 or not exams2: continue
+            
+            c_mat = self.ds.conflict_matrix[np.ix_(exams1, exams2)]
+            if c_mat.any():
+                scores["back_to_back"] += int(c_mat.sum()) * self.weights["back_to_back"]
+                
+                # Sadece gerçekten çakışma olan sınavlar arası oda mesafesini hesapla (Büyük Hızlandırma)
+                for i, j in zip(*np.nonzero(c_mat)):
+                    max_d = max((self._distance_cache[r1][r2] for r1 in chromosome[exams1[i]][1] for r2 in chromosome[exams2[j]][1]), default=0.0)
+                    scores["room_distance"] += c_mat[i, j] * max_d * self.weights["room_distance"]
                         
         # More than 2 a day
         for exams in self._students_3_plus:
