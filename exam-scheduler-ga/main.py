@@ -12,7 +12,7 @@ def main():
                         help="Path to the XML dataset file")
     parser.add_argument("--pop-size", type=int, default=10, help="Population size")
     parser.add_argument("--gens", type=int, default=50, help="Number of generations")
-    parser.add_argument("--mut-rate", type=float, default=0.1, help="Mutation rate")
+    parser.add_argument("--mut-rate", type=float, default=0.015, help="Mutation rate")
     
     args = parser.parse_args()
     
