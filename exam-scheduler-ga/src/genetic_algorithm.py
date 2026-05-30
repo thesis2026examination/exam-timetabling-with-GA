@@ -47,10 +47,10 @@ class GeneticAlgorithm:
                         valid_periods = list(exam.available_periods) if exam.available_periods else list(self.ds.periods.keys())
                 
                 # Greedy Selection: Pick period with minimum conflict among already scheduled exams
-                sampled_periods = random.sample(valid_periods, min(len(valid_periods), 10))
                 best_periods, min_conf = [], float('inf')
-                for p in sampled_periods:
-                    conflicts = sum(self.ds.conflict_matrix[exam.idx][other] for other in period_exams[p])
+                for p in valid_periods:
+                    others = period_exams[p]
+                    conflicts = int(self.ds.conflict_matrix[exam.idx, others].sum()) if others else 0
                     if conflicts < min_conf:
                         min_conf = conflicts
                         best_periods = [p]
@@ -197,9 +197,8 @@ class GeneticAlgorithm:
                     if idx in period_exams[p_id]:
                         period_exams[p_id].remove(idx)
 
-                    sampled = random.sample(opts, min(len(opts), 10))
                     best_p, min_conf = p_id, float('inf')
-                    for p in sampled:
+                    for p in opts:
                         others = period_exams[p]
                         conf = int(self.ds.conflict_matrix[idx, others].sum()) if others else 0
                         if conf < min_conf:
@@ -330,23 +329,27 @@ class GeneticAlgorithm:
             evaluated.sort(key=lambda x: x[0])
             best_fitness = evaluated[0][0]
 
-            # --- Doğru Kurgulanmış Rastgele Şok (Hyper-Mutation) Mekanizması ---
+            # --- Dinamik Kaçış Stratejisi: Adaptif Mutasyon + Cataclysm (Kitlesel Yok Oluş) ---
             if best_fitness < last_best:
                 stagnation = 0
                 self.mutation_rate = self.base_mutation_rate
             else:
                 stagnation += 1
 
-            if stagnation >= patience:
-                # TIKANMA ANINDA: Oranı anlık olarak %20'ye (0.20) fırlatıyoruz!
-                # Bu sayede popülasyon sert bir darbe alarak lokal minimum vadisinden dışarı zıplar.
-                self.mutation_rate = 0.20
-                logger.info(
-                    f"Generation {gen}: [SHOCK HYPER-MUTATION] {stagnation} jenerasyondur ilerleme yok! "
-                    f"Popülasyonu sarsmak için mut_rate anlık fırlatıldı: {self.mutation_rate:.4f}"
-                )
-                # Şok etkisini verdikten sonra sonraki jenerasyon sakinleşmesi için sayacı sıfırlıyoruz.
-                stagnation = 0 
+            cataclysm_triggered = False
+            
+            if stagnation >= patience * 4: # Örneğin 16 jenerasyon (patience=4)
+                # KİTLESEL YOK OLUŞ (CATACLYSM)
+                # Çok uzun süre tıkanırsa mutasyon oranı işe yaramaz. Popülasyona taze kan gerekir.
+                logger.warning(f"Generation {gen}: [CATACLYSM] {stagnation} jenerasyondur ilerleme yok! Popülasyonun büyük kısmı yenileniyor.")
+                self.mutation_rate = self.base_mutation_rate
+                stagnation = 0
+                cataclysm_triggered = True
+            elif stagnation >= patience:
+                # Kademeli artış ama YIKICI OLMAYACAK seviyede (max ~0.08 arası)
+                # 0.50 gibi oranlar çocukları tamamen çöpe çevirir ve sadece elitlerin hayatta kalmasını sağlar.
+                self.mutation_rate = min(0.08, self.base_mutation_rate + (stagnation - patience) * 0.005)
+                logger.info(f"Generation {gen}: [ADAPTIVE] Stagnation {stagnation}. mut_rate hafif artırıldı: {self.mutation_rate:.4f}")
             else:
                 self.mutation_rate = self.base_mutation_rate
 
@@ -357,9 +360,19 @@ class GeneticAlgorithm:
                 f"mut_rate={self.mutation_rate:.4f} | stagnation={stagnation}/{patience}"
             )
 
-            # Elitism: En iyi %10 şemayı doğrudan koru (İlerleme garantisi)
-            elitism_count = max(4, int(self.population_size * 0.10))
+            # Elitism: Normalde %10 koru. Cataclysm anında sadece EN İYİ 1 bireyi koru!
+            if cataclysm_triggered:
+                elitism_count = 1
+            else:
+                elitism_count = max(4, int(self.population_size * 0.10))
+                
             next_population = [chrom for _, chrom in evaluated[:elitism_count]]
+
+            # Cataclysm tetiklendiyse, popülasyonun %60'ını tamamen sıfırdan, akıllı sezgisel fonksiyonla üret
+            if cataclysm_triggered:
+                fresh_count = int(self.population_size * 0.60)
+                for _ in range(fresh_count):
+                    next_population.append(self.generate_random_chromosome())
 
             # Reproduction Loop
             while len(next_population) < self.population_size:
