@@ -125,7 +125,7 @@ def parse_dataset(xml_path: str) -> Dataset:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    ds = parse_dataset(r"C:\Users\zenaa\Desktop\TezProjesi\exam-timetabling-with-GA\pu-exam-fal10.xml")
+    ds = parse_dataset(r"C:\exam-timetabling-with-GA\pu-exam-fal10.xml")
     print(f"Loaded {len(ds.exams)} exams, {len(ds.rooms)} rooms, {len(ds.periods)} periods, {len(ds.student_exams)} students.")
     print(f"Large exams: {len(ds.large_exams_indices)}")
     print(f"Time-fixed exams: {len(ds.time_fixed_exams)}")
