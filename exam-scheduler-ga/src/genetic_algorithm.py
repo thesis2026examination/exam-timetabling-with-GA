@@ -319,6 +319,7 @@ class GeneticAlgorithm:
         No full fitness calls are made here.
         """
         num_mutations = np.random.binomial(len(chromosome), self.mutation_rate)
+        num_mutations = min(num_mutations, 12)
         if num_mutations == 0:
             return chromosome
 
