@@ -1,0 +1,86 @@
+{
+    "Configuration 1 (Baseline)": {
+        "name": "Configuration 1 (Baseline)",
+        "pop_size": 50,
+        "mut_rate": 0.15,
+        "tournament_size": 5,
+        "elapsed_time": 8.707846879959106,
+        "final_fitness": 461500,
+        "hard_penalty": 292000,
+        "soft_penalty": 169500,
+        "scores": {
+            "instructor_conflict": 0,
+            "room_conflict": 0,
+            "student_conflict": 0,
+            "capacity_shortage": 292000,
+            "building_spread": 16300,
+            "same_day_extra_exam": 110300,
+            "back_to_back_exam": 42900,
+            "total_penalty": 461500
+        },
+        "history_length": 11
+    },
+    "Configuration 2 (High Mutation)": {
+        "name": "Configuration 2 (High Mutation)",
+        "pop_size": 50,
+        "mut_rate": 0.3,
+        "tournament_size": 5,
+        "elapsed_time": 8.175248146057129,
+        "final_fitness": 536900,
+        "hard_penalty": 386000,
+        "soft_penalty": 150900,
+        "scores": {
+            "instructor_conflict": 0,
+            "room_conflict": 0,
+            "student_conflict": 0,
+            "capacity_shortage": 386000,
+            "building_spread": 15200,
+            "same_day_extra_exam": 105400,
+            "back_to_back_exam": 30300,
+            "total_penalty": 536900
+        },
+        "history_length": 11
+    },
+    "Configuration 3 (Large Population)": {
+        "name": "Configuration 3 (Large Population)",
+        "pop_size": 100,
+        "mut_rate": 0.15,
+        "tournament_size": 5,
+        "elapsed_time": 14.969745874404907,
+        "final_fitness": 408250,
+        "hard_penalty": 255500,
+        "soft_penalty": 152750,
+        "scores": {
+            "instructor_conflict": 0,
+            "room_conflict": 0,
+            "student_conflict": 0,
+            "capacity_shortage": 255500,
+            "building_spread": 16000,
+            "same_day_extra_exam": 106750,
+            "back_to_back_exam": 30000,
+            "total_penalty": 408250
+        },
+        "history_length": 11
+    },
+    "Configuration 4 (Conservative)": {
+        "name": "Configuration 4 (Conservative)",
+        "pop_size": 30,
+        "mut_rate": 0.05,
+        "tournament_size": 3,
+        "elapsed_time": 4.699383497238159,
+        "final_fitness": 776600,
+        "hard_penalty": 647000,
+        "soft_penalty": 129600,
+        "scores": {
+            "instructor_conflict": 0,
+            "room_conflict": 0,
+            "student_conflict": 0,
+            "capacity_shortage": 647000,
+            "building_spread": 14600,
+            "same_day_extra_exam": 98800,
+            "back_to_back_exam": 16200,
+            "total_penalty": 776600
+        },
+        "history_length": 11
+    }
+}

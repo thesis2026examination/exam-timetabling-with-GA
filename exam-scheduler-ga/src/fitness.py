@@ -1,151 +1,171 @@
-from typing import List, Tuple, Dict
-from .model import Dataset
+from collections import Counter, defaultdict
+from typing import Dict, List, Tuple
+
 import numpy as np
-import math
+
+from .model import CSVDataset
+
+Gene = Dict[str, object]
+Chromosome = Dict[int, Gene]
+
 
 class FitnessCalculator:
-    def __init__(self, dataset: Dataset):
+    def __init__(self, dataset: CSVDataset):
         self.ds = dataset
         self.weights = {
-            "direct_conflict": 1000.0,
-            "large_exams": 2500000.0,
-            "more_than_2_a_day": 100.0,
-            "back_to_back": 10.0,
-            "room_split": 10.0,
-            "period_penalty": 1.0,
-            "room_penalty": 1.0,
-            "room_split_distance": 0.01,
-            "room_size": 0.001,
-            "room_distance": 0.0001,
-            "rotation_penalty": 0.0001
+            "instructor_conflict": 1000,
+            "room_conflict": 1000,
+            "student_conflict": 1000,
+            "capacity_shortage": 500,
+            "building_spread": 100,
+            "same_day_extra_exam": 50,
+            "back_to_back_exam": 150,
         }
-        
-        # Pre-compute room distances
-        self._distance_cache = {}
-        room_ids = list(self.ds.rooms.keys())
-        for r1 in room_ids:
-            self._distance_cache[r1] = {}
-            for r2 in room_ids:
-                if r1 == r2:
-                    self._distance_cache[r1][r2] = 0.0
-                else:
-                    self._distance_cache[r1][r2] = self._haversine(
-                        self.ds.rooms[r1].lat, self.ds.rooms[r1].lon,
-                        self.ds.rooms[r2].lat, self.ds.rooms[r2].lon
-                    )
-                    
-        # Pre-compute back-to-back periods
-        self._b2b_periods = []
-        for p in range(1, 29):
-            if self.ds.periods[p].day == self.ds.periods[p+1].day:
-                self._b2b_periods.append((p, p+1))
-                
-        # Pre-compute students taking 3+ exams
-        self._students_3_plus = [exams for exams in self.ds.student_exams.values() if len(exams) >= 3]
-        
-        # Map period id to a day index (0 to 5 for Mon to Sat)
-        self._period_day_idx = [0]*30
-        days = []
-        for p in range(1, 30):
-            d = self.ds.periods[p].day
-            if d not in days:
-                days.append(d)
-            self._period_day_idx[p] = days.index(d)
-        
-    def _haversine(self, lat1, lon1, lat2, lon2):
-        # Calculate distance in meters
-        R = 6371000 # radius of earth in meters
-        phi1 = math.radians(lat1)
-        phi2 = math.radians(lat2)
-        delta_phi = math.radians(lat2 - lat1)
-        delta_lambda = math.radians(lon2 - lon1)
-        
-        a = math.sin(delta_phi / 2.0) ** 2 + \
-            math.cos(phi1) * math.cos(phi2) * \
-            math.sin(delta_lambda / 2.0) ** 2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return R * c
+        self._timeslot_day = {
+            timeslot_id: timeslot.day
+            for timeslot_id, timeslot in self.ds.timeslots.items()
+        }
+        self._consecutive_timeslots = self._build_consecutive_timeslot_pairs()
 
-    def calculate_fitness(self, chromosome: List[Tuple[int, Tuple[int, ...]]]) -> Tuple[float, Dict[str, float]]:
-        scores = {k: 0.0 for k in self.weights}
-        
-        # 1. Large Exams Spilling
-        for idx in self.ds.large_exams_indices:
-            if chromosome[idx][0] > 24:
-                scores["large_exams"] += self.weights["large_exams"]
-                
-        # 2. Period Penalty & Room Penalty & Room Split & Room Size & Room Split Distance
-        for idx, exam in enumerate(self.ds.exams):
-            period_id, room_ids = chromosome[idx]
-            
-            # Period Penalty
-            p_penalty = self.ds.periods[period_id].penalty
-            scores["period_penalty"] += p_penalty * self.weights["period_penalty"]
-            
-            # Room Split Penalty
-            num_rooms = len(room_ids)
-            if num_rooms > 1:
-                scores["room_split"] += self.weights["room_split"]
-                # Room Split Distance
-                max_dist = 0.0
-                for i in range(num_rooms):
-                    r1 = room_ids[i]
-                    for j in range(i + 1, num_rooms):
-                        dist = self._distance_cache[r1][room_ids[j]]
-                        if dist > max_dist:
-                            max_dist = dist
-                scores["room_split_distance"] += max_dist * self.weights["room_split_distance"]
-            
-            # Room Penalty & Size Penalty
-            total_capacity = 0
-            for rid in room_ids:
-                room = self.ds.rooms[rid]
-                r_penalty = room.penalty_periods.get(period_id, 0)
-                scores["room_penalty"] += r_penalty * self.weights["room_penalty"]
-                cap = room.alt_size if exam.alt_seating else room.size
-                total_capacity += cap
-                
-            # Room Size inefficient use
-            if total_capacity > exam.students_count:
-                scores["room_size"] += (total_capacity - exam.students_count) * self.weights["room_size"]
-        
-        # 3. Matrix based student conflicts
-        period_exams = [[] for _ in range(30)]
-        for idx, (p_id, _) in enumerate(chromosome):
-            period_exams[p_id].append(idx)
-            
-        # Direct conflict
-        for p_id in range(1, 30):
-            exams = period_exams[p_id]
-            if len(exams) > 1:
-                # NumPy ile alt-matrisin toplamını tek seferde al ve simetrik olduğu için 2'ye böl
-                conflicts = int(self.ds.conflict_matrix[np.ix_(exams, exams)].sum() // 2)
-                if conflicts > 0:
-                    scores["direct_conflict"] += conflicts * self.weights["direct_conflict"]
-                        
-        # Back to back & room distance
-        for p1, p2 in self._b2b_periods:
-            exams1, exams2 = period_exams[p1], period_exams[p2]
-            if not exams1 or not exams2: continue
-            
-            c_mat = self.ds.conflict_matrix[np.ix_(exams1, exams2)]
-            if c_mat.any():
-                scores["back_to_back"] += int(c_mat.sum()) * self.weights["back_to_back"]
-                
-                # Sadece gerçekten çakışma olan sınavlar arası oda mesafesini hesapla (Büyük Hızlandırma)
-                for i, j in zip(*np.nonzero(c_mat)):
-                    max_d = max((self._distance_cache[r1][r2] for r1 in chromosome[exams1[i]][1] for r2 in chromosome[exams2[j]][1]), default=0.0)
-                    scores["room_distance"] += c_mat[i, j] * max_d * self.weights["room_distance"]
-                        
-        # More than 2 a day
-        for exams in self._students_3_plus:
-            day_counts = [0] * 6
-            for idx in exams:
-                day_counts[self._period_day_idx[chromosome[idx][0]]] += 1
-                
-            for count in day_counts:
-                if count > 2:
-                    scores["more_than_2_a_day"] += self.weights["more_than_2_a_day"]
+    def _build_consecutive_timeslot_pairs(self) -> set[frozenset[int]]:
+        timeslots_by_day = defaultdict(list)
+        for timeslot in self.ds.timeslots.values():
+            timeslots_by_day[timeslot.day].append(timeslot)
 
-        total_penalty = sum(scores.values())
-        return total_penalty, scores
+        pairs = set()
+        for day_timeslots in timeslots_by_day.values():
+            ordered = sorted(day_timeslots, key=lambda slot: (slot.start_time, slot.end_time, slot.id))
+            for previous, current in zip(ordered, ordered[1:]):
+                pairs.add(frozenset((previous.id, current.id)))
+        return pairs
+
+    def _validate_chromosome(self, chromosome: Chromosome) -> None:
+        missing_courses = [course_id for course_id in self.ds.course_ids if course_id not in chromosome]
+        if missing_courses:
+            raise ValueError(f"Chromosome is missing course_id values: {missing_courses}")
+
+        unknown_courses = sorted(set(chromosome) - set(self.ds.course_ids))
+        if unknown_courses:
+            raise ValueError(f"Chromosome references unknown course_id values: {unknown_courses}")
+
+        for course_id, gene in chromosome.items():
+            timeslot_id = int(gene["timeslot"])
+            if timeslot_id not in self.ds.timeslots:
+                raise ValueError(f"Course {course_id} references unknown timeslot_id: {timeslot_id}")
+
+            room_ids = list(gene["rooms"])
+            unknown_rooms = sorted(set(room_ids) - set(self.ds.classrooms))
+            if unknown_rooms:
+                raise ValueError(f"Course {course_id} references unknown classroom_id values: {unknown_rooms}")
+
+    def _courses_by_timeslot(self, chromosome: Chromosome) -> Dict[int, List[int]]:
+        courses_by_timeslot = defaultdict(list)
+        for course_id, gene in chromosome.items():
+            courses_by_timeslot[int(gene["timeslot"])].append(course_id)
+        return courses_by_timeslot
+
+    def _score_instructor_conflicts(self, courses_by_timeslot: Dict[int, List[int]]) -> int:
+        penalty = 0
+        for course_ids in courses_by_timeslot.values():
+            instructor_usage = Counter()
+            for course_id in course_ids:
+                instructor_usage.update(self.ds.course_instructors[course_id])
+
+            for usage_count in instructor_usage.values():
+                if usage_count > 1:
+                    penalty += (usage_count * (usage_count - 1) // 2) * self.weights["instructor_conflict"]
+        return penalty
+
+    def _score_room_conflicts(self, chromosome: Chromosome) -> int:
+        room_usage_by_timeslot = defaultdict(Counter)
+        for gene in chromosome.values():
+            timeslot_id = int(gene["timeslot"])
+            room_ids = list(gene["rooms"])
+            room_usage_by_timeslot[timeslot_id].update(room_ids)
+
+        penalty = 0
+        for room_usage in room_usage_by_timeslot.values():
+            for usage_count in room_usage.values():
+                if usage_count > 1:
+                    penalty += (usage_count * (usage_count - 1) // 2) * self.weights["room_conflict"]
+        return penalty
+
+    def _score_student_conflicts(self, courses_by_timeslot: Dict[int, List[int]]) -> int:
+        penalty = 0
+        for course_ids in courses_by_timeslot.values():
+            if len(course_ids) < 2:
+                continue
+
+            course_indices = [self.ds.course_id_to_index[course_id] for course_id in course_ids]
+            shared_student_count = int(
+                self.ds.conflict_matrix[np.ix_(course_indices, course_indices)].sum() // 2
+            )
+            penalty += shared_student_count * self.weights["student_conflict"]
+        return penalty
+
+    def _score_capacity_shortage(self, chromosome: Chromosome) -> int:
+        penalty = 0
+        for course_id, gene in chromosome.items():
+            total_capacity = sum(
+                self.ds.classrooms[room_id].capacity
+                for room_id in set(gene["rooms"])
+            )
+            shortage = max(0, self.ds.course_enrollment_counts[course_id] - total_capacity)
+            penalty += shortage * self.weights["capacity_shortage"]
+        return penalty
+
+    def _score_building_spread(self, chromosome: Chromosome) -> int:
+        penalty = 0
+        for gene in chromosome.values():
+            buildings = {
+                self.ds.classrooms[room_id].building_name
+                for room_id in set(gene["rooms"])
+            }
+            if len(buildings) > 1:
+                penalty += (len(buildings) - 1) * self.weights["building_spread"]
+        return penalty
+
+    def _score_student_spread(self, chromosome: Chromosome) -> Dict[str, int]:
+        scores = {
+            "same_day_extra_exam": 0,
+            "back_to_back_exam": 0,
+        }
+
+        for course_ids in self.ds.student_courses.values():
+            timeslot_ids = [int(chromosome[course_id]["timeslot"]) for course_id in course_ids]
+            day_counts = Counter(self._timeslot_day[timeslot_id] for timeslot_id in timeslot_ids)
+
+            for exam_count in day_counts.values():
+                if exam_count > 1:
+                    scores["same_day_extra_exam"] += (
+                        exam_count - 1
+                    ) * self.weights["same_day_extra_exam"]
+
+            for left_pos, left_timeslot_id in enumerate(timeslot_ids):
+                for right_timeslot_id in timeslot_ids[left_pos + 1:]:
+                    if frozenset((left_timeslot_id, right_timeslot_id)) in self._consecutive_timeslots:
+                        scores["back_to_back_exam"] += self.weights["back_to_back_exam"]
+
+        return scores
+
+    def calculate_fitness(self, chromosome: Chromosome) -> Tuple[float, Dict[str, int]]:
+        self._validate_chromosome(chromosome)
+        courses_by_timeslot = self._courses_by_timeslot(chromosome)
+
+        scores = {
+            "instructor_conflict": self._score_instructor_conflicts(courses_by_timeslot),
+            "room_conflict": self._score_room_conflicts(chromosome),
+            "student_conflict": self._score_student_conflicts(courses_by_timeslot),
+            "capacity_shortage": self._score_capacity_shortage(chromosome),
+            "building_spread": self._score_building_spread(chromosome),
+        }
+        scores.update(self._score_student_spread(chromosome))
+
+        penalty_score = sum(scores.values())
+        scores["total_penalty"] = penalty_score
+        fitness_score = penalty_score
+        return fitness_score, scores
+
+
+def calculate_fitness(dataset: CSVDataset, chromosome: Chromosome) -> Tuple[float, Dict[str, int]]:
+    return FitnessCalculator(dataset).calculate_fitness(chromosome)

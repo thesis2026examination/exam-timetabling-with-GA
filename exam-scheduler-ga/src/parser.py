@@ -1,139 +1,192 @@
-import xml.etree.ElementTree as ET
 import numpy as np
 import logging
-from .model import Period, Room, Exam, Dataset
+from pathlib import Path
+from typing import Dict, List
+
+import pandas as pd
+
+from .model import (
+    Classroom,
+    Course,
+    CSVDataset,
+    Instructor,
+    TimeSlot,
+)
 
 logger = logging.getLogger(__name__)
 
-def parse_dataset(xml_path: str) -> Dataset:
-    logger.info(f"Parsing dataset from {xml_path}")
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    
-    dataset = Dataset()
-    
-    # 1. Parse Periods
-    periods_elem = root.find('periods')
-    if periods_elem is not None:
-        for p_elem in periods_elem.findall('period'):
-            p_id = int(p_elem.get('id'))
-            dataset.periods[p_id] = Period(
-                id=p_id,
-                length=int(p_elem.get('length')),
-                day=p_elem.get('day'),
-                time=p_elem.get('time'),
-                penalty=int(p_elem.get('penalty'))
-            )
-            
-    # 2. Parse Rooms
-    rooms_elem = root.find('rooms')
-    if rooms_elem is not None:
-        for r_elem in rooms_elem.findall('room'):
-            r_id = int(r_elem.get('id'))
-            coords = r_elem.get('coordinates', '')
-            lat, lon = 0.0, 0.0
-            if coords and ',' in coords:
-                lat, lon = map(float, coords.split(','))
-            
-            room = Room(
-                id=r_id,
-                size=int(r_elem.get('size')),
-                alt_size=int(r_elem.get('alt')),
-                lat=lat,
-                lon=lon
-            )
-            for p_elem in r_elem.findall('period'):
-                p_id = int(p_elem.get('id'))
-                if p_elem.get('available') == 'false':
-                    room.unavailable_periods.add(p_id)
-                elif p_elem.get('penalty') is not None:
-                    room.penalty_periods[p_id] = int(p_elem.get('penalty'))
-            dataset.rooms[r_id] = room
-            
-    # 3. Parse Exams (without student counts yet)
-    exams_elem = root.find('exams')
-    if exams_elem is not None:
-        all_exams = exams_elem.findall('exam')
-        # Sort by id to ensure deterministic indexing
-        all_exams.sort(key=lambda x: int(x.get('id')))
-        
-        for i, e_elem in enumerate(all_exams):
-            e_id = int(e_elem.get('id'))
-            exam = Exam(
-                id=e_id,
-                idx=i,  # 0 to 2222
-                length=int(e_elem.get('length')),
-                alt_seating=(e_elem.get('alt') == 'true')
-            )
-            
-            for p_elem in e_elem.findall('period'):
-                exam.available_periods.add(int(p_elem.get('id')))
-            for r_elem in e_elem.findall('room'):
-                exam.available_rooms.add(int(r_elem.get('id')))
-                
-            dataset.exams.append(exam)
-            
-    exam_id_to_idx = {exam.id: exam.idx for exam in dataset.exams}
-            
-    # 4. Parse Students
-    students_elem = root.find('students')
-    if students_elem is not None:
-        for s_elem in students_elem.findall('student'):
-            s_id = int(s_elem.get('id'))
-            exam_ids = [int(e.get('id')) for e in s_elem.findall('exam')]
-            exam_indices = [exam_id_to_idx[eid] for eid in exam_ids]
-            dataset.student_exams[s_id] = exam_indices
-            
-            # Increment student counts for exams
-            for idx in exam_indices:
-                dataset.exams[idx].students_count += 1
-                
-    # 5. Populate derived metrics
-    num_exams = len(dataset.exams)
-    dataset.conflict_matrix = np.zeros((num_exams, num_exams), dtype=np.int32)
-    
-    for s_id, exam_indices in dataset.student_exams.items():
-        for i in range(len(exam_indices)):
-            for j in range(i + 1, len(exam_indices)):
-                ex1, ex2 = exam_indices[i], exam_indices[j]
-                dataset.conflict_matrix[ex1][ex2] += 1
-                dataset.conflict_matrix[ex2][ex1] += 1
-                
-    for exam in dataset.exams:
-        if exam.students_count >= 600:
-            exam.is_large = True
-            dataset.large_exams_indices.append(exam.idx)
-            
-        if len(exam.available_periods) == 1:
-            dataset.time_fixed_exams[exam.idx] = list(exam.available_periods)[0]
-            
-        if len(exam.available_rooms) == 1:
-            dataset.room_fixed_exams[exam.idx] = list(exam.available_rooms)[0]
-            
-    # 6. Parse Constraints
-    constraints_elem = root.find('constraints')
-    if constraints_elem is not None:
-        for dp_elem in constraints_elem.findall('different-period'):
-            exam_indices = [exam_id_to_idx[int(e.get('id'))] for e in dp_elem.findall('exam')]
-            dataset.different_period_constraints.append(exam_indices)
-            
-        for sp_elem in constraints_elem.findall('same-period'):
-            exam_indices = [exam_id_to_idx[int(e.get('id'))] for e in sp_elem.findall('exam')]
-            dataset.same_period_constraints.append(exam_indices)
-            
-    return dataset
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    ds = parse_dataset(r"C:\Users\zenaa\Desktop\TezProjesi\exam-timetabling-with-GA\pu-exam-fal10.xml")
-    print(f"Loaded {len(ds.exams)} exams, {len(ds.rooms)} rooms, {len(ds.periods)} periods, {len(ds.student_exams)} students.")
-    print(f"Large exams: {len(ds.large_exams_indices)}")
-    print(f"Time-fixed exams: {len(ds.time_fixed_exams)}")
-    print(f"Room-fixed exams: {len(ds.room_fixed_exams)}")
-    print(f"Different period constraints: {len(ds.different_period_constraints)}")
-    print(f"Same period constraints: {len(ds.same_period_constraints)}")
-    
-    # Verify density
-    total_conflicts = np.sum(ds.conflict_matrix > 0)
-    density = total_conflicts / (len(ds.exams) * (len(ds.exams) - 1))
-    print(f"Conflict Density: {density * 100:.3f}%")
+def _require_columns(frame: pd.DataFrame, file_name: str, columns: List[str]) -> None:
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"{file_name} is missing required columns: {', '.join(missing)}")
+
+
+def _read_csv(data_dir: Path, file_name: str) -> pd.DataFrame:
+    csv_path = data_dir / file_name
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+    return pd.read_csv(csv_path)
+
+
+def load_csv_dataset(data_dir: str = "archive") -> CSVDataset:
+    """Load the small CSV exam-timetabling dataset and build GA-ready lookups."""
+    data_path = Path(data_dir)
+    logger.info("Loading CSV dataset from %s", data_path)
+
+    classrooms_df = _read_csv(data_path, "classrooms.csv")
+    courses_df = _read_csv(data_path, "courses.csv")
+    instructors_df = _read_csv(data_path, "instructors.csv")
+    timeslots_df = _read_csv(data_path, "timeslots.csv")
+    students_df = _read_csv(data_path, "students.csv")
+    schedule_df = _read_csv(data_path, "schedule.csv")
+
+    _require_columns(
+        classrooms_df,
+        "classrooms.csv",
+        ["classroom_id", "capacity", "building_name", "room_number"],
+    )
+    _require_columns(courses_df, "courses.csv", ["course_id"])
+    _require_columns(instructors_df, "instructors.csv", ["instructor_id"])
+    _require_columns(
+        timeslots_df,
+        "timeslots.csv",
+        ["timeslot_id", "day", "start_time", "end_time"],
+    )
+    _require_columns(students_df, "students.csv", ["student_id"])
+    _require_columns(schedule_df, "schedule.csv", ["student_id", "course_id", "instructor_id"])
+
+    classrooms_df = classrooms_df.copy()
+    courses_df = courses_df.copy()
+    instructors_df = instructors_df.copy()
+    timeslots_df = timeslots_df.copy()
+    students_df = students_df.copy()
+    schedule_df = schedule_df.copy()
+
+    for frame, columns in [
+        (classrooms_df, ["classroom_id", "capacity"]),
+        (courses_df, ["course_id"]),
+        (timeslots_df, ["timeslot_id"]),
+        (schedule_df, ["course_id"]),
+    ]:
+        for column in columns:
+            frame[column] = pd.to_numeric(frame[column], errors="raise").astype(int)
+
+    for frame, columns in [
+        (classrooms_df, ["building_name", "room_number", "room_type"]),
+        (courses_df, ["course_name", "department", "description"]),
+        (
+            instructors_df,
+            ["instructor_id", "first_name", "last_name", "email", "phone_number", "department"],
+        ),
+        (timeslots_df, ["day", "start_time", "end_time"]),
+        (students_df, ["student_id"]),
+        (schedule_df, ["student_id", "instructor_id"]),
+    ]:
+        for column in columns:
+            if column in frame.columns:
+                frame[column] = frame[column].fillna("").astype(str).str.strip()
+
+    if "credits" in courses_df.columns:
+        courses_df["credits"] = pd.to_numeric(courses_df["credits"], errors="coerce").fillna(0).astype(int)
+
+    classrooms = {
+        row.classroom_id: Classroom(
+            id=row.classroom_id,
+            capacity=row.capacity,
+            building_name=row.building_name,
+            room_number=row.room_number,
+            room_type=getattr(row, "room_type", ""),
+        )
+        for row in classrooms_df.itertuples(index=False)
+    }
+
+    courses = {
+        row.course_id: Course(
+            id=row.course_id,
+            name=getattr(row, "course_name", ""),
+            department=getattr(row, "department", ""),
+            credits=getattr(row, "credits", 0),
+            description=getattr(row, "description", ""),
+        )
+        for row in courses_df.itertuples(index=False)
+    }
+
+    instructors = {
+        row.instructor_id: Instructor(
+            id=row.instructor_id,
+            first_name=getattr(row, "first_name", ""),
+            last_name=getattr(row, "last_name", ""),
+            email=getattr(row, "email", ""),
+            phone_number=getattr(row, "phone_number", ""),
+            department=getattr(row, "department", ""),
+        )
+        for row in instructors_df.itertuples(index=False)
+    }
+
+    timeslots = {
+        row.timeslot_id: TimeSlot(
+            id=row.timeslot_id,
+            day=row.day,
+            start_time=row.start_time,
+            end_time=row.end_time,
+        )
+        for row in timeslots_df.itertuples(index=False)
+    }
+
+    students = students_df.set_index("student_id", drop=False).to_dict(orient="index")
+    course_ids = sorted(courses)
+    course_id_to_index = {course_id: idx for idx, course_id in enumerate(course_ids)}
+
+    unknown_courses = sorted(set(schedule_df["course_id"]) - set(course_ids))
+    if unknown_courses:
+        raise ValueError(f"schedule.csv references unknown course_id values: {unknown_courses}")
+
+    enrollment_rows = schedule_df[["student_id", "course_id"]].drop_duplicates()
+    course_students: Dict[int, List[str]] = {
+        course_id: sorted(
+            enrollment_rows.loc[enrollment_rows["course_id"] == course_id, "student_id"].tolist()
+        )
+        for course_id in course_ids
+    }
+    course_enrollment_counts = {
+        course_id: len(student_ids)
+        for course_id, student_ids in course_students.items()
+    }
+
+    student_courses = {
+        student_id: sorted(group["course_id"].unique().tolist())
+        for student_id, group in enrollment_rows.groupby("student_id")
+    }
+
+    course_instructors = {
+        course_id: sorted(
+            schedule_df.loc[
+                schedule_df["course_id"] == course_id,
+                "instructor_id",
+            ].dropna().unique().tolist()
+        )
+        for course_id in course_ids
+    }
+
+    incidence = pd.crosstab(enrollment_rows["student_id"], enrollment_rows["course_id"])
+    incidence = incidence.reindex(columns=course_ids, fill_value=0).astype(np.int32)
+    conflict_matrix = incidence.to_numpy(dtype=np.int32).T @ incidence.to_numpy(dtype=np.int32)
+    np.fill_diagonal(conflict_matrix, 0)
+
+    return CSVDataset(
+        classrooms=classrooms,
+        courses=courses,
+        instructors=instructors,
+        timeslots=timeslots,
+        students=students,
+        schedule_records=schedule_df.to_dict(orient="records"),
+        course_ids=course_ids,
+        course_id_to_index=course_id_to_index,
+        index_to_course_id=course_ids,
+        course_enrollment_counts=course_enrollment_counts,
+        course_students=course_students,
+        student_courses=student_courses,
+        course_instructors=course_instructors,
+        conflict_matrix=conflict_matrix,
+    )

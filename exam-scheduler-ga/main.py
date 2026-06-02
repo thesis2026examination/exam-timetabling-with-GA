@@ -1,44 +1,59 @@
 import argparse
 import logging
 import os
-from src.parser import parse_dataset
+
 from src.genetic_algorithm import GeneticAlgorithm
+from src.parser import load_csv_dataset
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     
-    parser = argparse.ArgumentParser(description="Exam Timetabling using Genetic Algorithm")
-    parser.add_argument("--dataset", type=str, default=r"C:\Users\zenaa\Desktop\TezProjesi\exam-timetabling-with-GA\pu-exam-fal10.xml",
-                        help="Path to the XML dataset file")
-    parser.add_argument("--pop-size", type=int, default=10, help="Population size")
-    parser.add_argument("--gens", type=int, default=50, help="Number of generations")
-    parser.add_argument("--mut-rate", type=float, default=0.015, help="Mutation rate")
+    parser = argparse.ArgumentParser(description="CSV Exam Timetabling Genetic Algorithm")
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="archive",
+        help="Directory containing classrooms.csv, courses.csv, instructors.csv, schedule.csv, students.csv, timeslots.csv",
+    )
+    parser.add_argument("--pop-size", type=int, default=50, help="Population size")
+    parser.add_argument("--gens", type=int, default=100, help="Number of generations")
+    parser.add_argument("--mut-rate", type=float, default=0.15, help="Mutation probability")
+    parser.add_argument("--tournament-size", type=int, default=5, help="Tournament selection size")
     
     args = parser.parse_args()
     
-    if not os.path.exists(args.dataset):
-        logging.error(f"Dataset file not found: {args.dataset}")
+    if not os.path.isdir(args.data_dir):
+        logging.error("Data directory not found: %s", args.data_dir)
         return
         
-    logging.info("Step 1: Parsing Dataset")
-    dataset = parse_dataset(args.dataset)
-    logging.info(f"Loaded {len(dataset.exams)} exams, {len(dataset.rooms)} rooms, "
-                 f"{len(dataset.periods)} periods, {len(dataset.student_exams)} students.")
-    logging.info(f"Identified {len(dataset.large_exams_indices)} large exams and "
-                 f"{len(dataset.time_fixed_exams)} time-fixed exams.")
-                 
-    logging.info("Step 2: Initializing Genetic Algorithm")
-    ga = GeneticAlgorithm(dataset, population_size=args.pop_size, mutation_rate=args.mut_rate)
-    
-    logging.info("Step 3: Running Genetic Algorithm Optimization")
-    best_chromosome = ga.run(generations=args.gens)
-    
-    logging.info("Optimization complete!")
-    best_fitness, scores = ga.fitness_calc.calculate_fitness(best_chromosome)
-    logging.info(f"Best Fitness (Penalty): {best_fitness}")
-    for k, v in scores.items():
-        if v > 0:
-            logging.info(f"  - {k}: {v}")
+    logging.info("Loading CSV dataset")
+    dataset = load_csv_dataset(args.data_dir)
+    logging.info(
+        "Loaded %s courses, %s classrooms, %s instructors, %s timeslots, %s students.",
+        len(dataset.courses),
+        len(dataset.classrooms),
+        len(dataset.instructors),
+        len(dataset.timeslots),
+        len(dataset.students),
+    )
+    logging.info("Conflict matrix shape: %s", dataset.conflict_matrix.shape)
+    logging.info(
+        "Enrollment range: min=%s max=%s",
+        min(dataset.course_enrollment_counts.values()),
+        max(dataset.course_enrollment_counts.values()),
+    )
+
+    ga = GeneticAlgorithm(
+        dataset,
+        population_size=args.pop_size,
+        mutation_rate=args.mut_rate,
+        tournament_size=args.tournament_size,
+    )
+    fitness, penalty, scores, chromosome = ga.run_with_scores(generations=args.gens)
+    logging.info("Best chromosome: %s", chromosome)
+    logging.info("Best fitness: %.10f", fitness)
+    logging.info("Best total penalty: %s", penalty)
+    logging.info("Best score breakdown: %s", scores)
             
 if __name__ == "__main__":
     main()
