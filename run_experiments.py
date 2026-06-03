@@ -61,31 +61,26 @@ def run_single_experiment(dataset, name, pop_size, mut_rate, tournament_size, ge
 def generate_plots(results, output_path):
     logging.info(f"Generating premium plotting chart at: {output_path}")
     
+    import matplotlib as mpl
+    # Set explicit vibrant color cycle to override local system grayscale defaults
+    vibrant_colors = ["#2563EB", "#EA580C", "#16A34A", "#9333EA", "#DC2626", "#0D9488", "#4F46E5"]
+    mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=vibrant_colors)
+    
     # Define a high-quality light theme suitable for academic journals (Nature/IEEE style)
     plt.figure(figsize=(11, 6.5), dpi=300)
     plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
     
-    keys = sorted(list(results.keys()))
-    colors = {
-        keys[0]: "#2563EB",       # Vibrant Blue
-        keys[1]: "#EA580C",  # Vibrant Orange
-        keys[2]: "#16A34A", # Emerald Green
-        keys[3]: "#9333EA"    # Deep Violet
-    }
+    styled_linestyles = ["-", "--", "-.", ":", "-", "--", "-."]
+    styled_markers = ["o", "s", "^", "D", "v", "<", ">"]
     
-    linestyles = {
-        keys[0]: "-",
-        keys[1]: "--",
-        keys[2]: "-.",
-        keys[3]: ":"
-    }
+    colors = {}
+    linestyles = {}
+    markers = {}
     
-    markers = {
-        keys[0]: "o",
-        keys[1]: "s",
-        keys[2]: "^",
-        keys[3]: "D"
-    }
+    for idx, name in enumerate(sorted(list(results.keys()))):
+        colors[name] = vibrant_colors[idx % len(vibrant_colors)]
+        linestyles[name] = styled_linestyles[idx % len(styled_linestyles)]
+        markers[name] = styled_markers[idx % len(styled_markers)]
     
     for name, res in results.items():
         history = res["history"]
@@ -96,12 +91,12 @@ def generate_plots(results, output_path):
             gens,
             penalties,
             label=name,
-            color=colors.get(name, "#000000"),
-            linestyle=linestyles.get(name, "-"),
-            marker=markers.get(name, "o"),
+            color=colors[name],
+            linestyle=linestyles[name],
+            marker=markers[name],
             markevery=max(1, len(gens) // 10),
-            markersize=6,
-            linewidth=2,
+            markersize=8,
+            linewidth=2.5,
             alpha=0.9
         )
     
@@ -125,6 +120,7 @@ def generate_plots(results, output_path):
     plt.savefig(output_path, dpi=300)
     plt.close()
     logging.info("Convergence plot saved successfully.")
+
     
 def generate_latex_report(results, output_path, dataset_name):
     logging.info(f"Generating LaTeX Thesis section at: {output_path}")
@@ -337,12 +333,22 @@ def main():
     latex_path = exp_dir / "thesis_results.tex"
     latex_content = generate_latex_report(results, latex_path, dataset.name)
     
+    import shutil
+    shutil.copy2(json_path, Path("experiment_results.json"))
+    shutil.copy2(plot_path, Path("experiment_results.png"))
+    shutil.copy2(latex_path, Path("thesis_results.tex"))
+    
     print(f"\nSuccess! Experiment outputs have been successfully written to the unique folder:")
     print(f"Directory:   {exp_dir.resolve()}")
     print(f"1. Chart Plot:        {plot_path.name}")
     print(f"2. LaTeX thesis text: {latex_path.name}")
     print(f"3. Raw summary JSON:  {json_path.name}")
+    print(f"\nFor your convenience, the latest files have also been copied to the workspace root:")
+    print(f"1. Root Chart Plot:        experiment_results.png")
+    print(f"2. Root LaTeX thesis text: thesis_results.tex")
+    print(f"3. Root Raw summary JSON:  experiment_results.json")
     print(f"\nYou can open '{latex_path.resolve()}' and copy the text directly into your thesis.")
+
 
 if __name__ == "__main__":
     main()
