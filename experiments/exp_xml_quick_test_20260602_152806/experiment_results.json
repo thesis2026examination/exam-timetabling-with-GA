@@ -1,0 +1,70 @@
+{
+    "Configuration 1 (Baseline)": {
+        "name": "Configuration 1 (Baseline)",
+        "pop_size": 50,
+        "mut_rate": 0.15,
+        "tournament_size": 5,
+        "elapsed_time": 127.51152849197388,
+        "final_fitness": 3.882349287200671e-06,
+        "final_penalty": 257575,
+        "scores": {
+            "student": 8860,
+            "room": 154315,
+            "time": 4975,
+            "distribution": 2604,
+            "total_penalty": 257575
+        },
+        "history_length": 3
+    },
+    "Configuration 2 (High Mutation)": {
+        "name": "Configuration 2 (High Mutation)",
+        "pop_size": 50,
+        "mut_rate": 0.3,
+        "tournament_size": 5,
+        "elapsed_time": 156.1041054725647,
+        "final_fitness": 3.937612468056119e-06,
+        "final_penalty": 253960,
+        "scores": {
+            "student": 8298,
+            "room": 153846,
+            "time": 4996,
+            "distribution": 2576,
+            "total_penalty": 253960
+        },
+        "history_length": 3
+    },
+    "Configuration 3 (Large Population)": {
+        "name": "Configuration 3 (Large Population)",
+        "pop_size": 100,
+        "mut_rate": 0.15,
+        "tournament_size": 5,
+        "elapsed_time": 459.3710627555847,
+        "final_fitness": 3.948745286185315e-06,
+        "final_penalty": 253244,
+        "scores": {
+            "student": 7455,
+            "room": 156135,
+            "time": 4991,
+            "distribution": 2658,
+            "total_penalty": 253244
+        },
+        "history_length": 3
+    },
+    "Configuration 4 (Conservative)": {
+        "name": "Configuration 4 (Conservative)",
+        "pop_size": 30,
+        "mut_rate": 0.05,
+        "tournament_size": 3,
+        "elapsed_time": 122.61160516738892,
+        "final_fitness": 3.901175424155298e-06,
+        "final_penalty": 256332,
+        "scores": {
+            "student": 8296,
+            "room": 155842,
+            "time": 4995,
+            "distribution": 2602,
+            "total_penalty": 256332
+        },
+        "history_length": 3
+    }
+}

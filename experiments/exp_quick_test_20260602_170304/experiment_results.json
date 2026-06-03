@@ -1,0 +1,70 @@
+{
+    "Configuration 1 (Baseline / Standart)": {
+        "name": "Configuration 1 (Baseline / Standart)",
+        "pop_size": 100,
+        "mut_rate": 0.1,
+        "tournament_size": 5,
+        "elapsed_time": 103.82735180854797,
+        "final_fitness": 255359.0,
+        "final_penalty": 255359,
+        "scores": {
+            "student": 8589,
+            "room": 153224,
+            "time": 4980,
+            "distribution": 2618,
+            "total_penalty": 255359
+        },
+        "history_length": 3
+    },
+    "Configuration 2 (High Mutation / Exploration Focus)": {
+        "name": "Configuration 2 (High Mutation / Exploration Focus)",
+        "pop_size": 100,
+        "mut_rate": 0.25,
+        "tournament_size": 5,
+        "elapsed_time": 102.56412029266357,
+        "final_fitness": 258281.0,
+        "final_penalty": 258281,
+        "scores": {
+            "student": 8472,
+            "room": 156906,
+            "time": 4985,
+            "distribution": 2605,
+            "total_penalty": 258281
+        },
+        "history_length": 3
+    },
+    "Configuration 3 (Large Population / Genetic Diversity)": {
+        "name": "Configuration 3 (Large Population / Genetic Diversity)",
+        "pop_size": 200,
+        "mut_rate": 0.1,
+        "tournament_size": 10,
+        "elapsed_time": 180.37640738487244,
+        "final_fitness": 254192.0,
+        "final_penalty": 254192,
+        "scores": {
+            "student": 8258,
+            "room": 153285,
+            "time": 5008,
+            "distribution": 2639,
+            "total_penalty": 254192
+        },
+        "history_length": 3
+    },
+    "Configuration 4 (High Selection Pressure)": {
+        "name": "Configuration 4 (High Selection Pressure)",
+        "pop_size": 100,
+        "mut_rate": 0.1,
+        "tournament_size": 15,
+        "elapsed_time": 88.11249661445618,
+        "final_fitness": 249811.0,
+        "final_penalty": 249811,
+        "scores": {
+            "student": 7468,
+            "room": 152743,
+            "time": 4987,
+            "distribution": 2652,
+            "total_penalty": 249811
+        },
+        "history_length": 3
+    }
+}

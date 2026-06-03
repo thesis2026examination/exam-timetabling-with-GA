@@ -1,171 +1,180 @@
-from collections import Counter, defaultdict
-from typing import Dict, List, Tuple
-
+import logging
 import numpy as np
+from typing import Dict, Tuple
+from .dataset_parser import XMLDataset
 
-from .model import CSVDataset
+logger = logging.getLogger(__name__)
 
-Gene = Dict[str, object]
-Chromosome = Dict[int, Gene]
+# Chromosome structure: Dict[int, Dict[str, int]]
+# e.g., { class_id: {"start_slot": int, "room_id": int} }
 
+def calculate_fitness(chromosome: Dict[int, Dict[str, int]], dataset: XMLDataset) -> Tuple[float, Dict[str, int]]:
+    """
+    Highly-optimized fitness calculation with NumPy vectorization.
+    """
+    student_errors = 0
+    room_overlap_errors = 0
+    capacity_errors = 0
+    travel_errors = 0
+    time_errors = 0
+    dist_errors = 0
+    
+    # 1. Populate starts, ends, and rooms using flat precomputations
+    starts = np.zeros(dataset.max_class_id + 1, dtype=np.int32)
+    ends = np.zeros(dataset.max_class_id + 1, dtype=np.int32)
+    rooms = np.zeros(dataset.max_class_id + 1, dtype=np.int32)
+    
+    for class_id, gene in chromosome.items():
+        s = gene["start_slot"]
+        r = gene["room_id"]
+        starts[class_id] = s
+        ends[class_id] = s + dataset.class_lengths[class_id]
+        rooms[class_id] = r
+            
+    # --- 1. STUDENT PENALTY ---
+    s1 = starts[dataset.conflict_c1]
+    e1 = ends[dataset.conflict_c1]
+    s2 = starts[dataset.conflict_c2]
+    e2 = ends[dataset.conflict_c2]
+    
+    overlaps = (s1 < e2) & (s2 < e1)
+    student_errors = int(np.sum(dataset.conflict_shared[overlaps]))
 
-class FitnessCalculator:
-    def __init__(self, dataset: CSVDataset):
-        self.ds = dataset
-        self.weights = {
-            "instructor_conflict": 1000,
-            "room_conflict": 1000,
-            "student_conflict": 1000,
-            "capacity_shortage": 500,
-            "building_spread": 100,
-            "same_day_extra_exam": 50,
-            "back_to_back_exam": 150,
-        }
-        self._timeslot_day = {
-            timeslot_id: timeslot.day
-            for timeslot_id, timeslot in self.ds.timeslots.items()
-        }
-        self._consecutive_timeslots = self._build_consecutive_timeslot_pairs()
-
-    def _build_consecutive_timeslot_pairs(self) -> set[frozenset[int]]:
-        timeslots_by_day = defaultdict(list)
-        for timeslot in self.ds.timeslots.values():
-            timeslots_by_day[timeslot.day].append(timeslot)
-
-        pairs = set()
-        for day_timeslots in timeslots_by_day.values():
-            ordered = sorted(day_timeslots, key=lambda slot: (slot.start_time, slot.end_time, slot.id))
-            for previous, current in zip(ordered, ordered[1:]):
-                pairs.add(frozenset((previous.id, current.id)))
-        return pairs
-
-    def _validate_chromosome(self, chromosome: Chromosome) -> None:
-        missing_courses = [course_id for course_id in self.ds.course_ids if course_id not in chromosome]
-        if missing_courses:
-            raise ValueError(f"Chromosome is missing course_id values: {missing_courses}")
-
-        unknown_courses = sorted(set(chromosome) - set(self.ds.course_ids))
-        if unknown_courses:
-            raise ValueError(f"Chromosome references unknown course_id values: {unknown_courses}")
-
-        for course_id, gene in chromosome.items():
-            timeslot_id = int(gene["timeslot"])
-            if timeslot_id not in self.ds.timeslots:
-                raise ValueError(f"Course {course_id} references unknown timeslot_id: {timeslot_id}")
-
-            room_ids = list(gene["rooms"])
-            unknown_rooms = sorted(set(room_ids) - set(self.ds.classrooms))
-            if unknown_rooms:
-                raise ValueError(f"Course {course_id} references unknown classroom_id values: {unknown_rooms}")
-
-    def _courses_by_timeslot(self, chromosome: Chromosome) -> Dict[int, List[int]]:
-        courses_by_timeslot = defaultdict(list)
-        for course_id, gene in chromosome.items():
-            courses_by_timeslot[int(gene["timeslot"])].append(course_id)
-        return courses_by_timeslot
-
-    def _score_instructor_conflicts(self, courses_by_timeslot: Dict[int, List[int]]) -> int:
-        penalty = 0
-        for course_ids in courses_by_timeslot.values():
-            instructor_usage = Counter()
-            for course_id in course_ids:
-                instructor_usage.update(self.ds.course_instructors[course_id])
-
-            for usage_count in instructor_usage.values():
-                if usage_count > 1:
-                    penalty += (usage_count * (usage_count - 1) // 2) * self.weights["instructor_conflict"]
-        return penalty
-
-    def _score_room_conflicts(self, chromosome: Chromosome) -> int:
-        room_usage_by_timeslot = defaultdict(Counter)
-        for gene in chromosome.values():
-            timeslot_id = int(gene["timeslot"])
-            room_ids = list(gene["rooms"])
-            room_usage_by_timeslot[timeslot_id].update(room_ids)
-
-        penalty = 0
-        for room_usage in room_usage_by_timeslot.values():
-            for usage_count in room_usage.values():
-                if usage_count > 1:
-                    penalty += (usage_count * (usage_count - 1) // 2) * self.weights["room_conflict"]
-        return penalty
-
-    def _score_student_conflicts(self, courses_by_timeslot: Dict[int, List[int]]) -> int:
-        penalty = 0
-        for course_ids in courses_by_timeslot.values():
-            if len(course_ids) < 2:
-                continue
-
-            course_indices = [self.ds.course_id_to_index[course_id] for course_id in course_ids]
-            shared_student_count = int(
-                self.ds.conflict_matrix[np.ix_(course_indices, course_indices)].sum() // 2
-            )
-            penalty += shared_student_count * self.weights["student_conflict"]
-        return penalty
-
-    def _score_capacity_shortage(self, chromosome: Chromosome) -> int:
-        penalty = 0
-        for course_id, gene in chromosome.items():
-            total_capacity = sum(
-                self.ds.classrooms[room_id].capacity
-                for room_id in set(gene["rooms"])
-            )
-            shortage = max(0, self.ds.course_enrollment_counts[course_id] - total_capacity)
-            penalty += shortage * self.weights["capacity_shortage"]
-        return penalty
-
-    def _score_building_spread(self, chromosome: Chromosome) -> int:
-        penalty = 0
-        for gene in chromosome.values():
-            buildings = {
-                self.ds.classrooms[room_id].building_name
-                for room_id in set(gene["rooms"])
-            }
-            if len(buildings) > 1:
-                penalty += (len(buildings) - 1) * self.weights["building_spread"]
-        return penalty
-
-    def _score_student_spread(self, chromosome: Chromosome) -> Dict[str, int]:
-        scores = {
-            "same_day_extra_exam": 0,
-            "back_to_back_exam": 0,
-        }
-
-        for course_ids in self.ds.student_courses.values():
-            timeslot_ids = [int(chromosome[course_id]["timeslot"]) for course_id in course_ids]
-            day_counts = Counter(self._timeslot_day[timeslot_id] for timeslot_id in timeslot_ids)
-
-            for exam_count in day_counts.values():
-                if exam_count > 1:
-                    scores["same_day_extra_exam"] += (
-                        exam_count - 1
-                    ) * self.weights["same_day_extra_exam"]
-
-            for left_pos, left_timeslot_id in enumerate(timeslot_ids):
-                for right_timeslot_id in timeslot_ids[left_pos + 1:]:
-                    if frozenset((left_timeslot_id, right_timeslot_id)) in self._consecutive_timeslots:
-                        scores["back_to_back_exam"] += self.weights["back_to_back_exam"]
-
-        return scores
-
-    def calculate_fitness(self, chromosome: Chromosome) -> Tuple[float, Dict[str, int]]:
-        self._validate_chromosome(chromosome)
-        courses_by_timeslot = self._courses_by_timeslot(chromosome)
-
-        scores = {
-            "instructor_conflict": self._score_instructor_conflicts(courses_by_timeslot),
-            "room_conflict": self._score_room_conflicts(chromosome),
-            "student_conflict": self._score_student_conflicts(courses_by_timeslot),
-            "capacity_shortage": self._score_capacity_shortage(chromosome),
-            "building_spread": self._score_building_spread(chromosome),
-        }
-        scores.update(self._score_student_spread(chromosome))
-
-        penalty_score = sum(scores.values())
-        scores["total_penalty"] = penalty_score
-        fitness_score = penalty_score
-        return fitness_score, scores
+    # --- 2. ROOM PENALTY ---
+    # A) Room overlap conflicts: group slots by room
+    classes_by_room = {}
+    for class_id in dataset.class_ids:
+        s = starts[class_id]
+        e = ends[class_id]
+        r_id = rooms[class_id]
+        classes_by_room.setdefault(r_id, []).append((s, e))
+        
+    for r_id, r_classes in classes_by_room.items():
+        n = len(r_classes)
+        if n < 2:
+            continue
+        # Sort by start slot
+        r_classes.sort(key=lambda x: x[0])
+        # O(N log N) check
+        for i in range(n):
+            s1, e1 = r_classes[i]
+            for j in range(i + 1, n):
+                s2, e2 = r_classes[j]
+                if s2 >= e1:
+                    break
+                room_overlap_errors += 1
+                    
+    # B) Capacity shortages (100% Vectorized)
+    assigned_rooms = rooms[dataset.class_ids]
+    caps = dataset.room_capacities[assigned_rooms]
+    diff = dataset.class_enrollments[dataset.class_ids] - caps
+    capacity_errors = int(np.sum(diff[diff > 0]))
+            
+    # C) Travel distance for consecutive classes (Fast Matrix Lookups)
+    GAP_THRESHOLD = 36  # 3 hours (36 * 5 mins)
+    for student_id, st_classes in dataset.student_classes.items():
+        if len(st_classes) < 2:
+            continue
+            
+        # Dynamically sort using starts lookup in compiled C
+        sorted_classes = sorted(st_classes, key=starts.__getitem__)
+        
+        for i in range(len(sorted_classes) - 1):
+            c1 = sorted_classes[i]
+            c2 = sorted_classes[i+1]
+            s1 = starts[c1]
+            s2 = starts[c2]
+            
+            gap = s2 - ends[c1]
+            day_1 = s1 // dataset.slots_per_day
+            day_2 = s2 // dataset.slots_per_day
+            
+            if day_1 == day_2 and 0 <= gap <= GAP_THRESHOLD:
+                travel_errors += dataset.travel_distances_matrix[rooms[c1], rooms[c2]]
+                
+    room_errors = room_overlap_errors + capacity_errors + travel_errors
 
 
-def calculate_fitness(dataset: CSVDataset, chromosome: Chromosome) -> Tuple[float, Dict[str, int]]:
-    return FitnessCalculator(dataset).calculate_fitness(chromosome)
+    # --- 3. TIME PENALTY ---
+    # Instantly resolved via precomputed set lookups
+    for class_id in dataset.class_ids:
+        s_slot = starts[class_id]
+        allowed_set = dataset.allowed_slots[class_id]
+        if allowed_set is not None:
+            if s_slot not in allowed_set:
+                time_errors += 1
+
+    # --- 4. DISTRIBUTION PENALTY ---
+    for dist in dataset.distributions:
+        classes = dist.classes
+        if len(classes) < 2:
+            continue
+            
+        c_type = dist.type
+        if c_type == "Precedence":
+            for i in range(len(classes) - 1):
+                c1, c2 = classes[i], classes[i+1]
+                if ends[c1] > starts[c2]:
+                    dist_errors += 1
+                    
+        elif c_type == "SameTime":
+            first_slot = starts[classes[0]] % dataset.slots_per_day
+            for c in classes[1:]:
+                if (starts[c] % dataset.slots_per_day) != first_slot:
+                    dist_errors += 1
+                    
+        elif c_type == "SameDays":
+            first_day = starts[classes[0]] // dataset.slots_per_day
+            for c in classes[1:]:
+                if (starts[c] // dataset.slots_per_day) != first_day:
+                    dist_errors += 1
+                    
+        elif c_type == "DifferentDays":
+            days = [starts[c] // dataset.slots_per_day for c in classes]
+            if len(days) != len(set(days)):
+                dist_errors += (len(days) - len(set(days)))
+                
+        elif c_type == "SameRoom":
+            first_room = rooms[classes[0]]
+            for c in classes[1:]:
+                if rooms[c] != first_room:
+                    dist_errors += 1
+                    
+        elif c_type == "SameWeeks":
+            first_week = starts[classes[0]] // (7 * dataset.slots_per_day)
+            for c in classes[1:]:
+                if (starts[c] // (7 * dataset.slots_per_day)) != first_week:
+                    dist_errors += 1
+                    
+        elif c_type in {"NotOverlap", "SameAttendees"}:
+            for i, c1 in enumerate(classes):
+                s1 = starts[c1]
+                e1 = ends[c1]
+                for c2 in classes[i+1:]:
+                    if s1 < ends[c2] and starts[c2] < e1:
+                        dist_errors += 1
+
+    # --- 5. TOTAL PENALTY & FITNESS ---
+    student_weight = dataset.weights.get("student", 5.0)
+    room_weight = dataset.weights.get("room", 1.0)
+    time_weight = dataset.weights.get("time", 4.0)
+    dist_weight = dataset.weights.get("distribution", 15.0)
+    
+    total_penalty = (
+        (student_errors * student_weight) +
+        (room_errors * room_weight) +
+        (time_errors * time_weight) +
+        (dist_errors * dist_weight)
+    )
+    
+    fitness = float(total_penalty)
+    
+    scores = {
+        "student": int(student_errors),
+        "room": int(room_errors),
+        "time": int(time_errors),
+        "distribution": int(dist_errors),
+        "total_penalty": int(total_penalty)
+    }
+    
+    return fitness, scores
