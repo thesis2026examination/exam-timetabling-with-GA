@@ -154,6 +154,7 @@ class XMLDataset:
         for room_id, r in self.rooms.items():
             for target_id, dist in r.travel_distances.items():
                 self.travel_distances_matrix[room_id, target_id] = dist
+        self.travel_distances_matrix_list = self.travel_distances_matrix.tolist()
 
 
 def parse_xml_dataset(xml_path: str) -> XMLDataset:

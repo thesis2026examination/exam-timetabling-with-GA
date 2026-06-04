@@ -1,0 +1,63 @@
+% ====================================================================
+% THESIS SECTION: GENETIC ALGORITHM EXPERIMENTAL RESULTS AND EVALUATION
+% This file has been automatically generated and populated with real metrics.
+% ====================================================================
+
+\section{Genetic Algorithm Experimental Results and Evaluation}
+\label{sec:ga_experimental_results}
+
+In this section, the performance of the developed Pure Genetic Algorithm (GA) with Heuristic Initialization for the Exam Timetabling Problem (ETP) is evaluated. Using the large-scale international competition benchmark dataset \textbf{agh-fal17}, we analyze the search performance, constraint resolution capability, and convergence behavior.
+
+\subsection{Experimental Configuration Setup}
+\label{subsec:experimental_configurations}
+
+To optimize the exam schedule under a highly constrained search space, we configured the GA with High Selection Pressure and Heuristic Initialization:
+\begin{itemize}
+    \item \textbf{Population Size:} $100$
+    \item \textbf{Mutation Rate:} $0.10$
+    \item \textbf{Tournament Selection Size:} $15$
+    \item \textbf{Initialization Scheme:} Stochastic Heuristic Initialization (ordering classes by student conflict degree and selecting candidates to minimize initial conflicts)
+\end{itemize}
+
+The algorithm was executed for $5$ generations.
+
+\subsection{Performance Analysis and Quantitative Results}
+\label{subsec:performance_comparisons}
+
+The numerical results obtained from the run are summarized in Table~\ref{tab:ga_experiments}. The table presents the execution runtime (seconds), the best final fitness value, and the corresponding student, room, time, and distribution penalty breakdowns.
+
+\begin{table}[htbp]
+\centering
+\caption{Performance Analysis of the Heuristically Initialized Genetic Algorithm}
+\label{tab:ga_experiments}
+\begin{tabular}{lr}
+\hline
+\textbf{Metric} & \textbf{Value} \\ \hline
+Population Size & 100 \\
+Mutation Rate & 0.10 \\
+Tournament Size & 15 \\
+Execution Time (s) & 586.06 \\
+Student Penalty & 43663 \\
+Room Penalty & 145304 \\
+Time Penalty & 1493 \\
+Distribution Penalty & 2657 \\ \hline
+\textbf{Total Penalty} & \textbf{409446} \\ \hline
+\end{tabular}
+\end{table}
+
+The heuristic initialization allowed the GA to start with a highly optimized initial population, drastically bypassing the chaotic early generations of random search. This allowed the high selection pressure to focus on fine-tuning soft constraints.
+
+\subsection{Convergence Curve Analysis}
+\label{subsec:convergence_curve_analysis}
+
+The evolutionary trajectory and optimization trends over generations are illustrated in the convergence chart in Figure~\ref{fig:ga_convergence_curves}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{experiment_results.png}
+\caption{Generation-by-Generation GA Convergence Curve}
+\label{fig:ga_convergence_curves}
+\end{figure}
+
+The convergence profile indicates a smooth descent, demonstrating the stabilizing effect of starting with a heuristically guided population. The algorithm managed to balance room allocation, timeslot availability, and student schedule spreads to achieve a low-conflict timetable of \textbf{409446}.
+

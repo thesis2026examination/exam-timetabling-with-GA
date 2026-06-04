@@ -1,0 +1,19 @@
+{
+    "Configuration 4 (High Selection Pressure)": {
+        "name": "Configuration 4 (High Selection Pressure)",
+        "pop_size": 100,
+        "mut_rate": 0.1,
+        "tournament_size": 15,
+        "elapsed_time": 586.0552198886871,
+        "final_fitness": 409446.0,
+        "final_penalty": 409446,
+        "scores": {
+            "student": 43663,
+            "room": 145304,
+            "time": 1493,
+            "distribution": 2657,
+            "total_penalty": 409446
+        },
+        "history_length": 6
+    }
+}

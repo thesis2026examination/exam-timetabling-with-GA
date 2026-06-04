@@ -1,0 +1,19 @@
+{
+    "Configuration 4 (Optimized GA)": {
+        "name": "Configuration 4 (Optimized GA)",
+        "pop_size": 100,
+        "mut_rate": 0.1,
+        "tournament_size": 15,
+        "elapsed_time": 145.38783311843872,
+        "final_fitness": 213993.0,
+        "final_penalty": 213993,
+        "scores": {
+            "student": 8086,
+            "room": 117044,
+            "time": 4841,
+            "distribution": 2477,
+            "total_penalty": 213993
+        },
+        "history_length": 3
+    }
+}

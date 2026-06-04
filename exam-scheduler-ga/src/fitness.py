@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def calculate_fitness(chromosome: Dict[int, Dict[str, int]], dataset: XMLDataset) -> Tuple[float, Dict[str, int]]:
     """
-    Highly-optimized fitness calculation with NumPy vectorization.
+    Highly-optimized fitness calculation with NumPy vectorization and fast list lookups.
     """
     student_errors = 0
     room_overlap_errors = 0
@@ -30,6 +30,11 @@ def calculate_fitness(chromosome: Dict[int, Dict[str, int]], dataset: XMLDataset
         starts[class_id] = s
         ends[class_id] = s + dataset.class_lengths[class_id]
         rooms[class_id] = r
+        
+    # Convert to Python lists for O(1) loop-indexing which is much faster than NumPy indexing in Python loops
+    starts_list = starts.tolist()
+    ends_list = ends.tolist()
+    rooms_list = rooms.tolist()
             
     # --- 1. STUDENT PENALTY ---
     s1 = starts[dataset.conflict_c1]
@@ -44,9 +49,9 @@ def calculate_fitness(chromosome: Dict[int, Dict[str, int]], dataset: XMLDataset
     # A) Room overlap conflicts: group slots by room
     classes_by_room = {}
     for class_id in dataset.class_ids:
-        s = starts[class_id]
-        e = ends[class_id]
-        r_id = rooms[class_id]
+        s = starts_list[class_id]
+        e = ends_list[class_id]
+        r_id = rooms_list[class_id]
         classes_by_room.setdefault(r_id, []).append((s, e))
         
     for r_id, r_classes in classes_by_room.items():
@@ -77,20 +82,20 @@ def calculate_fitness(chromosome: Dict[int, Dict[str, int]], dataset: XMLDataset
             continue
             
         # Dynamically sort using starts lookup in compiled C
-        sorted_classes = sorted(st_classes, key=starts.__getitem__)
+        sorted_classes = sorted(st_classes, key=starts_list.__getitem__)
         
         for i in range(len(sorted_classes) - 1):
             c1 = sorted_classes[i]
             c2 = sorted_classes[i+1]
-            s1 = starts[c1]
-            s2 = starts[c2]
+            s1 = starts_list[c1]
+            s2 = starts_list[c2]
             
-            gap = s2 - ends[c1]
+            gap = s2 - ends_list[c1]
             day_1 = s1 // dataset.slots_per_day
             day_2 = s2 // dataset.slots_per_day
             
             if day_1 == day_2 and 0 <= gap <= GAP_THRESHOLD:
-                travel_errors += dataset.travel_distances_matrix[rooms[c1], rooms[c2]]
+                travel_errors += dataset.travel_distances_matrix_list[rooms_list[c1]][rooms_list[c2]]
                 
     room_errors = room_overlap_errors + capacity_errors + travel_errors
 
@@ -98,7 +103,7 @@ def calculate_fitness(chromosome: Dict[int, Dict[str, int]], dataset: XMLDataset
     # --- 3. TIME PENALTY ---
     # Instantly resolved via precomputed set lookups
     for class_id in dataset.class_ids:
-        s_slot = starts[class_id]
+        s_slot = starts_list[class_id]
         allowed_set = dataset.allowed_slots[class_id]
         if allowed_set is not None:
             if s_slot not in allowed_set:
@@ -114,44 +119,44 @@ def calculate_fitness(chromosome: Dict[int, Dict[str, int]], dataset: XMLDataset
         if c_type == "Precedence":
             for i in range(len(classes) - 1):
                 c1, c2 = classes[i], classes[i+1]
-                if ends[c1] > starts[c2]:
+                if ends_list[c1] > starts_list[c2]:
                     dist_errors += 1
                     
         elif c_type == "SameTime":
-            first_slot = starts[classes[0]] % dataset.slots_per_day
+            first_slot = starts_list[classes[0]] % dataset.slots_per_day
             for c in classes[1:]:
-                if (starts[c] % dataset.slots_per_day) != first_slot:
+                if (starts_list[c] % dataset.slots_per_day) != first_slot:
                     dist_errors += 1
                     
         elif c_type == "SameDays":
-            first_day = starts[classes[0]] // dataset.slots_per_day
+            first_day = starts_list[classes[0]] // dataset.slots_per_day
             for c in classes[1:]:
-                if (starts[c] // dataset.slots_per_day) != first_day:
+                if (starts_list[c] // dataset.slots_per_day) != first_day:
                     dist_errors += 1
                     
         elif c_type == "DifferentDays":
-            days = [starts[c] // dataset.slots_per_day for c in classes]
+            days = [starts_list[c] // dataset.slots_per_day for c in classes]
             if len(days) != len(set(days)):
                 dist_errors += (len(days) - len(set(days)))
                 
         elif c_type == "SameRoom":
-            first_room = rooms[classes[0]]
+            first_room = rooms_list[classes[0]]
             for c in classes[1:]:
-                if rooms[c] != first_room:
+                if rooms_list[c] != first_room:
                     dist_errors += 1
                     
         elif c_type == "SameWeeks":
-            first_week = starts[classes[0]] // (7 * dataset.slots_per_day)
+            first_week = starts_list[classes[0]] // (7 * dataset.slots_per_day)
             for c in classes[1:]:
-                if (starts[c] // (7 * dataset.slots_per_day)) != first_week:
+                if (starts_list[c] // (7 * dataset.slots_per_day)) != first_week:
                     dist_errors += 1
                     
         elif c_type in {"NotOverlap", "SameAttendees"}:
             for i, c1 in enumerate(classes):
-                s1 = starts[c1]
-                e1 = ends[c1]
+                s1 = starts_list[c1]
+                e1 = ends_list[c1]
                 for c2 in classes[i+1:]:
-                    if s1 < ends[c2] and starts[c2] < e1:
+                    if s1 < ends_list[c2] and starts_list[c2] < e1:
                         dist_errors += 1
 
     # --- 5. TOTAL PENALTY & FITNESS ---

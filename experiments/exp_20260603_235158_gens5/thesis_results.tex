@@ -26,7 +26,7 @@ Additionally, three key algorithmic enhancements were deployed:
     \item \textbf{Adaptive Parameters:} Dynamic tournament selection pressure (5 to 15) and stagnation-driven mutation rate boosting to escape local minima.
 \end{enumerate}
 
-The algorithm was executed for $400$ generations starting from the initialized population pool.
+The algorithm was executed for $5$ generations starting from the initialized population pool.
 
 \subsection{Performance Breakdown and Quantitative Analysis}
 \label{subsec:performance_comparisons}
@@ -40,11 +40,11 @@ The numerical results obtained from the optimized experiment are summarized in T
 \begin{tabular}{lccccccr}
 \hline
 \textbf{Configuration} & \textbf{Time (s)} & \textbf{Student Pen.} & \textbf{Room Pen.} & \textbf{Time Pen.} & \textbf{Dist. Pen.} & \textbf{Total Penalty} \\ \hline
-Optimized GA Run & 10623.67 & 3 & 26295 & 3361 & 2498 & 77224 \\ \hline
+Optimized GA Run & 239.56 & 6144 & 118382 & 4759 & 2413 & 204333 \\ \hline
 \end{tabular}
 \end{table}
 
-The optimized GA converged to a final penalty score of \textbf{77224} in \textbf{10623.67} seconds. Thanks to the heuristic initialization and guided local search mutation, hard constraints (such as room capacity shortages and student conflict overlaps) were addressed aggressively in the early generations, leaving the remaining generations to fine-tune soft constraint violations.
+The optimized GA converged to a final penalty score of \textbf{204333} in \textbf{239.56} seconds. Thanks to the heuristic initialization and guided local search mutation, hard constraints (such as room capacity shortages and student conflict overlaps) were addressed aggressively in the early generations, leaving the remaining generations to fine-tune soft constraint violations.
 
 \subsection{Convergence Curve Analysis}
 \label{subsec:convergence_curve_analysis}
