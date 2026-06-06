@@ -697,25 +697,33 @@ class GeneticAlgorithm:
                         
         return repaired
 
-    def run(self, generations: int = 100) -> Dict[int, Dict[str, int]]:
-        self.history = []
-        if not self.population:
-            self.initialize_population()
+    def run(self, generations: int = 100, resume: bool = False) -> Dict[int, Dict[str, int]]:
+        if not resume:
+            self.history = []
+            if not self.population:
+                self.initialize_population()
+            evaluated = self._evaluate_population()
+            best_overall = evaluated[0]
+            self._log_generation(0, best_overall)
+        else:
+            evaluated = self._evaluate_population()
+            best_overall = evaluated[0]
             
-        evaluated = self._evaluate_population()
-        best_overall = evaluated[0]
-        self._log_generation(0, best_overall)
-        
         elite_count = max(1, int(self.population_size * self.elitism_rate))
         
         # Adaptive parameters setup
         base_mutation_rate = self.mutation_rate
         stagnant_count = 0
         
+        start_gen = len(self.history) if resume else 1
+        
         for generation in range(1, generations + 1):
+            current_gen_num = start_gen + generation if resume else generation
+            total_expected_gens = start_gen + generations if resume else generations
+            
             # 1. Adaptive Tournament Size (selection pressure increases over time)
             # Starts at 5, linearly scales up to self.tournament_size by 50% of the generations
-            t_size = int(5 + (self.tournament_size - 5) * min(1.0, generation / max(1, generations / 2)))
+            t_size = int(5 + (self.tournament_size - 5) * min(1.0, current_gen_num / max(1, total_expected_gens / 2)))
             self.current_tournament_size = max(2, min(self.tournament_size, t_size))
             
             # Elitism: carry over the best individuals directly
@@ -738,7 +746,7 @@ class GeneticAlgorithm:
             evaluated = self._evaluate_population()
             
             # Perform local repair on the best chromosome in the population
-            best_chrom_repaired = self.repair_chromosome(evaluated[0][3], generation=generation, total_generations=generations)
+            best_chrom_repaired = self.repair_chromosome(evaluated[0][3], generation=current_gen_num, total_generations=total_expected_gens)
             repaired_fitness, repaired_penalty, repaired_scores, _ = self._evaluate(best_chrom_repaired)
             
             # If the repair improved the fitness, inject it back as the first element of the population
@@ -764,7 +772,7 @@ class GeneticAlgorithm:
             else:
                 self.mutation_rate = max(base_mutation_rate, self.mutation_rate * 0.95)
                 
-            self._log_generation(generation, evaluated[0])
+            self._log_generation(current_gen_num, evaluated[0])
             
             # Early stopping if optimal zero-penalty schedule found
             if best_overall[1] == 0:

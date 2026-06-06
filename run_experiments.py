@@ -27,7 +27,7 @@ def setup_logging():
     logging.getLogger("src.genetic_algorithm").setLevel(logging.INFO)
 
 
-def run_single_experiment(dataset, name, pop_size, mut_rate, tournament_size, gens):
+def run_single_experiment(dataset, name, pop_size, mut_rate, tournament_size, gens, resume_path=None):
     logging.info(f"Starting Experiment: {name} (Pop: {pop_size}, Mut: {mut_rate}, Tour: {tournament_size}, Gens: {gens})")
     
     ga = GeneticAlgorithm(
@@ -37,8 +37,18 @@ def run_single_experiment(dataset, name, pop_size, mut_rate, tournament_size, ge
         tournament_size=tournament_size
     )
     
+    resume = False
+    if resume_path and os.path.exists(resume_path):
+        import pickle
+        logging.info(f"Resuming population from checkpoint: {resume_path}")
+        with open(resume_path, "rb") as f:
+            population, history = pickle.load(f)
+        ga.population = population
+        ga.history = history
+        resume = True
+        
     start_time = time.time()
-    best_chromosome = ga.run(generations=gens)
+    best_chromosome = ga.run(generations=gens, resume=resume)
     elapsed_time = time.time() - start_time
     
     # Retrieve final scores of the best individual
@@ -55,7 +65,8 @@ def run_single_experiment(dataset, name, pop_size, mut_rate, tournament_size, ge
         "final_fitness": final_fitness,
         "final_penalty": final_penalty,
         "scores": scores,
-        "history": ga.history
+        "history": ga.history,
+        "ga_instance": ga
     }
 
 def generate_plots(results, output_path):
@@ -221,6 +232,7 @@ def main():
     parser.add_argument("--xml-file", type=str, default="aghfal17_postcompetition2.xml", help="ITC XML dataset path")
     parser.add_argument("--gens", type=int, default=20, help="Number of generations for each experiment (default 20 for large xml)")
     parser.add_argument("--name", type=str, default=None, help="Custom unique name for the experiment run")
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint .pkl file to resume from")
     args = parser.parse_args()
     
     # 1. Determine unique experiment directory
@@ -239,6 +251,12 @@ def main():
         alt_path = script_dir / args.xml_file
         if alt_path.exists():
             args.xml_file = str(alt_path)
+
+    # If resume file is not found in the current working directory, check in the script's directory
+    if args.resume and not os.path.exists(args.resume):
+        alt_resume_path = script_dir / args.resume
+        if alt_resume_path.exists():
+            args.resume = str(alt_resume_path)
 
     exp_dir = script_dir / "experiments" / exp_dir_name
     exp_dir.mkdir(parents=True, exist_ok=True)
@@ -271,7 +289,8 @@ def main():
             pop_size=cfg["pop_size"],
             mut_rate=cfg["mut_rate"],
             tournament_size=cfg["tournament_size"],
-            gens=args.gens
+            gens=args.gens,
+            resume_path=args.resume
         )
         results[cfg["name"]] = res
         
@@ -293,6 +312,13 @@ def main():
                 "history_length": len(compact_v["history"])
             }
         json.dump(compact_results, f, indent=4)
+        
+    # Save checkpoint.pkl inside the unique exp_dir
+    import pickle
+    checkpoint_path = exp_dir / "checkpoint.pkl"
+    ga_inst = results["Configuration 4 (Optimized GA)"]["ga_instance"]
+    with open(checkpoint_path, "wb") as f:
+        pickle.dump((ga_inst.population, ga_inst.history), f)
     
     # 1. Print visual console table
     print_summary_table(results)
@@ -309,12 +335,14 @@ def main():
     shutil.copy2(json_path, script_dir / "experiment_results.json")
     shutil.copy2(plot_path, script_dir / "experiment_results.png")
     shutil.copy2(latex_path, script_dir / "thesis_results.tex")
+    shutil.copy2(checkpoint_path, script_dir / "checkpoint.pkl")
     
     print(f"\nSuccess! Experiment outputs have been successfully written to the unique folder:")
     print(f"Directory:   {exp_dir.resolve()}")
     print(f"1. Chart Plot:        {plot_path.name}")
     print(f"2. LaTeX thesis text: {latex_path.name}")
     print(f"3. Raw summary JSON:  {json_path.name}")
+    print(f"4. State Checkpoint:  {checkpoint_path.name}")
     print(f"\nFor your convenience, the latest files have also been copied to the workspace root:")
     print(f"1. Root Chart Plot:        experiment_results.png")
     print(f"2. Root LaTeX thesis text: thesis_results.tex")
