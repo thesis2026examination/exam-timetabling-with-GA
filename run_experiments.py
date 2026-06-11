@@ -132,7 +132,101 @@ def generate_plots(results, output_path):
     plt.close()
     logging.info("Convergence plot saved successfully.")
 
+
+def generate_constraint_plots(results, output_dir):
+    logging.info(f"Generating constraint penalty plots at: {output_dir}")
     
+    import matplotlib as mpl
+    vibrant_colors = ["#2563EB", "#EA580C", "#16A34A", "#9333EA", "#DC2626"]
+    mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=vibrant_colors)
+    plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
+    
+    for name, res in results.items():
+        # Sanitize configuration name for use in filename
+        safe_name = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in name])
+        history = res["history"]
+        gens = [h["generation"] for h in history]
+        
+        student_penalties = [h.get("student", 0) for h in history]
+        room_penalties = [h.get("room", 0) for h in history]
+        time_penalties = [h.get("time", 0) for h in history]
+        dist_penalties = [h.get("dist", 0) for h in history]
+        total_penalties = [h.get("penalty", 0) for h in history]
+        
+        # 1. Combined linear plot
+        plt.figure(figsize=(11, 6.5), dpi=300)
+        plt.plot(gens, student_penalties, label="Student Conflict Penalty", color="#2563EB", linewidth=2, alpha=0.85)
+        plt.plot(gens, room_penalties, label="Room Capacity/Overlap Penalty", color="#EA580C", linewidth=2, alpha=0.85)
+        plt.plot(gens, time_penalties, label="Time Constraint Penalty", color="#16A34A", linewidth=2, alpha=0.85)
+        plt.plot(gens, dist_penalties, label="Distribution Rule Penalty", color="#9333EA", linewidth=2, alpha=0.85)
+        plt.plot(gens, total_penalties, label="Total Penalty (Sum)", color="#DC2626", linewidth=2.5, linestyle="--", alpha=0.9)
+
+        plt.title(f"Constraints Convergence Trajectory - {name}", fontsize=13, fontweight="bold", pad=15)
+        plt.xlabel("Generation (Epoch)", fontsize=11, fontweight="medium", labelpad=8)
+        plt.ylabel("Penalty Score (Lower is Better)", fontsize=11, fontweight="medium", labelpad=8)
+        plt.grid(True, linestyle="--", alpha=0.5, color="#CBD5E1")
+        plt.legend(frameon=True, facecolor="#F8FAFC", edgecolor="#E2E8F0", fontsize=10, loc="upper right")
+        plt.tight_layout()
+        
+        combined_path = os.path.join(output_dir, f"constraints_{safe_name}_combined.png")
+        plt.savefig(combined_path, dpi=300)
+        plt.close()
+
+        # 2. Combined log plot
+        plt.figure(figsize=(11, 6.5), dpi=300)
+        plt.semilogy(gens, student_penalties, label="Student Conflict Penalty", color="#2563EB", linewidth=2, alpha=0.85)
+        plt.semilogy(gens, room_penalties, label="Room Capacity/Overlap Penalty", color="#EA580C", linewidth=2, alpha=0.85)
+        plt.semilogy(gens, time_penalties, label="Time Constraint Penalty", color="#16A34A", linewidth=2, alpha=0.85)
+        plt.semilogy(gens, dist_penalties, label="Distribution Rule Penalty", color="#9333EA", linewidth=2, alpha=0.85)
+        plt.semilogy(gens, total_penalties, label="Total Penalty (Sum)", color="#DC2626", linewidth=2.5, linestyle="--", alpha=0.9)
+
+        plt.title(f"Constraints Convergence (Log Scale) - {name}", fontsize=13, fontweight="bold", pad=15)
+        plt.xlabel("Generation (Epoch)", fontsize=11, fontweight="medium", labelpad=8)
+        plt.ylabel("Penalty Score (Log Scale, Lower is Better)", fontsize=11, fontweight="medium", labelpad=8)
+        plt.grid(True, which="both", linestyle="--", alpha=0.5, color="#CBD5E1")
+        plt.legend(frameon=True, facecolor="#F8FAFC", edgecolor="#E2E8F0", fontsize=10, loc="upper right")
+        plt.tight_layout()
+        
+        log_path = os.path.join(output_dir, f"constraints_{safe_name}_log.png")
+        plt.savefig(log_path, dpi=300)
+        plt.close()
+
+        # 3. 2x2 subplots
+        fig, axs = plt.subplots(2, 2, figsize=(14, 10), dpi=300)
+        fig.suptitle(f"Individual Constraint Penalty Convergence - {name}", fontsize=15, fontweight="bold", y=0.98)
+
+        axs[0, 0].plot(gens, student_penalties, color="#2563EB", linewidth=2)
+        axs[0, 0].set_title("Student Conflict Penalty", fontsize=12, fontweight="semibold")
+        axs[0, 0].set_xlabel("Generation", fontsize=10)
+        axs[0, 0].set_ylabel("Penalty", fontsize=10)
+        axs[0, 0].grid(True, linestyle="--", alpha=0.5)
+
+        axs[0, 1].plot(gens, room_penalties, color="#EA580C", linewidth=2)
+        axs[0, 1].set_title("Room Capacity/Overlap Penalty", fontsize=12, fontweight="semibold")
+        axs[0, 1].set_xlabel("Generation", fontsize=10)
+        axs[0, 1].set_ylabel("Penalty", fontsize=10)
+        axs[0, 1].grid(True, linestyle="--", alpha=0.5)
+
+        axs[1, 0].plot(gens, time_penalties, color="#16A34A", linewidth=2)
+        axs[1, 0].set_title("Time Constraint Penalty", fontsize=12, fontweight="semibold")
+        axs[1, 0].set_xlabel("Generation", fontsize=10)
+        axs[1, 0].set_ylabel("Penalty", fontsize=10)
+        axs[1, 0].grid(True, linestyle="--", alpha=0.5)
+
+        axs[1, 1].plot(gens, dist_penalties, color="#9333EA", linewidth=2)
+        axs[1, 1].set_title("Distribution Rule Penalty", fontsize=12, fontweight="semibold")
+        axs[1, 1].set_xlabel("Generation", fontsize=10)
+        axs[1, 1].set_ylabel("Penalty", fontsize=10)
+        axs[1, 1].grid(True, linestyle="--", alpha=0.5)
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        subplots_path = os.path.join(output_dir, f"constraints_{safe_name}_subplots.png")
+        plt.savefig(subplots_path, dpi=300)
+        plt.close()
+    
+    logging.info("Constraint plots saved successfully.")
+
+
 def generate_latex_report(results, output_path, dataset_name):
     logging.info(f"Generating LaTeX Thesis section at: {output_path}")
     
@@ -327,9 +421,16 @@ def main():
     plot_path = exp_dir / "experiment_results.png"
     generate_plots(results, plot_path)
     
+    # 2b. Generate constraint breakdown plots inside the folder
+    generate_constraint_plots(results, exp_dir)
+    
     # 3. Create standalone LaTeX results write-up inside the folder
     latex_path = exp_dir / "thesis_results.tex"
     latex_content = generate_latex_report(results, latex_path, dataset.name)
+    
+    # Retrieve configuration name for constraint files copy
+    cfg_name = list(results.keys())[0]
+    safe_cfg_name = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in cfg_name])
     
     import shutil
     shutil.copy2(json_path, script_dir / "experiment_results.json")
@@ -337,16 +438,23 @@ def main():
     shutil.copy2(latex_path, script_dir / "thesis_results.tex")
     shutil.copy2(checkpoint_path, script_dir / "checkpoint.pkl")
     
+    # Copy constraint plots to root
+    shutil.copy2(exp_dir / f"constraints_{safe_cfg_name}_combined.png", script_dir / "constraints_combined.png")
+    shutil.copy2(exp_dir / f"constraints_{safe_cfg_name}_log.png", script_dir / "constraints_log.png")
+    shutil.copy2(exp_dir / f"constraints_{safe_cfg_name}_subplots.png", script_dir / "constraints_subplots.png")
+    
     print(f"\nSuccess! Experiment outputs have been successfully written to the unique folder:")
     print(f"Directory:   {exp_dir.resolve()}")
     print(f"1. Chart Plot:        {plot_path.name}")
     print(f"2. LaTeX thesis text: {latex_path.name}")
     print(f"3. Raw summary JSON:  {json_path.name}")
     print(f"4. State Checkpoint:  {checkpoint_path.name}")
+    print(f"5. Constraint Plots:  constraints_{safe_cfg_name}_combined.png / _log.png / _subplots.png")
     print(f"\nFor your convenience, the latest files have also been copied to the workspace root:")
     print(f"1. Root Chart Plot:        experiment_results.png")
     print(f"2. Root LaTeX thesis text: thesis_results.tex")
     print(f"3. Root Raw summary JSON:  experiment_results.json")
+    print(f"4. Root Constraint Plots:  constraints_combined.png, constraints_log.png, constraints_subplots.png")
     print(f"\nYou can open '{latex_path.resolve()}' and copy the text directly into your thesis.")
 
 
