@@ -368,7 +368,7 @@ def main():
     configs = [
         {
             "name": "Configuration 4 (Optimized GA)",
-            "pop_size": 100,
+            "pop_size": 20,
             "mut_rate": 0.10,
             "tournament_size": 15,
             "description": "Optimized GA using Heuristic Initialization, Local Search Mutation, and Adaptive Parameters."
